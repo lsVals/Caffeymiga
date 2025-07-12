@@ -31,13 +31,29 @@ class FirebaseManager:
                 # En producción, usar variables de entorno
                 firebase_key = os.getenv('FIREBASE_PRIVATE_KEY', '')
                 
+                if not firebase_key:
+                    raise Exception("FIREBASE_PRIVATE_KEY no encontrada en variables de entorno")
+                
+                # Limpiar y formatear la clave privada
+                firebase_key = firebase_key.strip()
+                
                 # Reemplazar \\n por saltos de línea reales
                 if '\\n' in firebase_key:
                     firebase_key = firebase_key.replace('\\n', '\n')
                 
-                # Si no tiene el formato correcto, agregar los headers/footers
-                if firebase_key and not firebase_key.startswith('-----BEGIN PRIVATE KEY-----'):
-                    firebase_key = f"-----BEGIN PRIVATE KEY-----\n{firebase_key}\n-----END PRIVATE KEY-----"
+                # Remover headers/footers existentes para reconstruir correctamente
+                firebase_key = firebase_key.replace('-----BEGIN PRIVATE KEY-----', '')
+                firebase_key = firebase_key.replace('-----END PRIVATE KEY-----', '')
+                firebase_key = firebase_key.strip()
+                
+                # Reconstruir la clave con formato correcto
+                firebase_key = f"-----BEGIN PRIVATE KEY-----\n{firebase_key}\n-----END PRIVATE KEY-----"
+                
+                logger.info(f"🔑 Clave privada de Firebase procesada (longitud: {len(firebase_key)})")
+                
+                # Validar que la clave tiene un formato mínimamente correcto
+                if not firebase_key.startswith('-----BEGIN PRIVATE KEY-----') or not firebase_key.endswith('-----END PRIVATE KEY-----'):
+                    raise Exception("Formato de clave privada de Firebase inválido")
                 
                 cred_dict = {
                     "type": "service_account",
@@ -89,15 +105,23 @@ class FirebaseManager:
     def save_order(self, order_data):
         """Guardar pedido en Firestore"""
         try:
+            logger.info("🔄 Intentando guardar pedido en Firebase...")
+            
             if not self.db:
+                logger.error("❌ Firebase database no inicializada")
                 raise Exception("Firebase no inicializado")
+            
+            logger.info("✅ Firebase database está disponible")
             
             # Agregar timestamp
             order_data['created_at'] = datetime.now()
             order_data['status'] = 'nuevo'
             order_data['pos_status'] = 'pendiente'
             
+            logger.info(f"📦 Datos del pedido preparados: ID={order_data.get('id', 'N/A')}")
+            
             # Guardar en colección 'orders'
+            logger.info("💾 Guardando en colección 'orders'...")
             doc_ref = self.db.collection('orders').add(order_data)
             order_id = doc_ref[1].id
             
@@ -105,7 +129,8 @@ class FirebaseManager:
             return order_id
             
         except Exception as e:
-            logger.error(f"❌ Error guardando pedido: {e}")
+            logger.error(f"❌ Error guardando pedido en Firebase: {e}")
+            logger.error(f"🔍 Tipo de error: {type(e).__name__}")
             return None
     
     def update_payment_status(self, order_id, payment_data):
