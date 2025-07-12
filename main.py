@@ -268,121 +268,224 @@ def get_payment_status(payment_id):
         logger.error(f"❌ Error obteniendo estado del pago: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# 🔥 ENDPOINTS PARA EL SISTEMA POS 🔥
+# ===============================
+# 🔥 SISTEMA POS INTEGRADO 🔥
+# ===============================
 
-@app.route('/pos/orders', methods=['GET', 'POST'])
-def handle_pos_orders():
-    """Manejar pedidos del POS - GET para obtener, POST para crear"""
-    if request.method == 'GET':
-        # Obtener pedidos pendientes para el POS
-        try:
-            orders = firebase_manager.get_pending_orders()
-            return jsonify({
-                "orders": orders,
-                "count": len(orders),
-                "status": "success"
-            })
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo pedidos POS: {str(e)}")
-            return jsonify({"error": str(e)}), 500
-    
-    elif request.method == 'POST':
-        # Crear nuevo pedido directo al sistema POS
-        try:
-            data = request.get_json()
-            logger.info(f"📦 Recibiendo pedido directo para POS: {data.get('payer', {}).get('name', 'Sin nombre')}")
+@app.route('/pos/orders', methods=['GET'])
+def get_pos_orders():
+    """Obtener todos los pedidos para el sistema POS"""
+    try:
+        orders = firebase_manager.get_all_orders()
+        
+        # Formatear pedidos para el POS
+        formatted_orders = []
+        for order in orders:
+            # Extraer información del cliente
+            customer = order.get('customer', {})
+            items = order.get('items', [])
             
-            # Validar datos requeridos
-            if not data or 'items' not in data or 'payer' not in data:
-                return jsonify({"error": "Datos incompletos"}), 400
-            
-            # Preparar datos del pedido para Firebase
-            order_data = {
-                "customer_info": {
-                    "name": data['payer']['name'],
-                    "phone": data['payer']['phone']['number'],
-                    "email": data['payer'].get('email', f"{data['payer']['phone']['number']}@caffeymiga.com")
+            # Formatear para compatibilidad con el POS
+            formatted_order = {
+                'id': order.get('id', ''),
+                'firebase_id': order.get('firebase_id', ''),
+                'preference_id': order.get('preference_id', ''),
+                'cliente': {
+                    'nombre': customer.get('name', 'Cliente Web'),
+                    'telefono': customer.get('phone', 'N/A'),
+                    'email': customer.get('email', 'N/A')
                 },
-                "items": data['items'],
-                "payment_method": data.get('payment_method', 'efectivo'),
-                "notes": data.get('notes', ''),
-                "metadata": data.get('metadata', {}),
-                "status": "pendiente",
-                "pos_ready": True,  # Marca que está listo para el POS
-                "created_at": datetime.now().isoformat(),
-                "source": "web_direct_pos"
+                'productos': [],
+                'total': order.get('total', 0),
+                'metodo_pago': customer.get('payment_method', 'Tarjeta'),
+                'estado': order.get('status', 'pending'),
+                'pos_status': order.get('pos_status', 'nuevo'),
+                'fecha': order.get('timestamp', datetime.now().isoformat()),
+                'payment_status': order.get('payment_status', 'pending')
             }
             
-            # Guardar en Firebase
-            order_id = firebase_manager.save_order(order_data)
+            # Formatear productos
+            for item in items:
+                formatted_order['productos'].append({
+                    'nombre': item.get('title', 'Producto'),
+                    'cantidad': item.get('quantity', 1),
+                    'precio': item.get('unit_price', 0),
+                    'descripcion': item.get('description', '')
+                })
             
-            logger.info(f"🔥 Pedido directo guardado en Firebase: {order_id}")
-            
-            return jsonify({
-                "message": "Pedido enviado al sistema POS",
-                "order_id": order_id,
-                "status": "success"
-            })
-            
-        except Exception as e:
-            logger.error(f"❌ Error procesando pedido directo: {str(e)}")
-            return jsonify({"error": f"Error interno: {str(e)}"}), 500
-
-@app.route('/pos/orders/<order_id>/status', methods=['PUT'])
-def update_order_status(order_id):
-    """Actualizar estado de un pedido desde el POS"""
-    try:
-        data = request.get_json()
-        new_status = data.get('status')
+            formatted_orders.append(formatted_order)
         
-        # Estados válidos: preparando, listo, entregado, cancelado
-        valid_statuses = ['preparando', 'listo', 'entregado', 'cancelado']
-        if new_status not in valid_statuses:
-            return jsonify({"error": "Estado inválido"}), 400
-        
-        success = firebase_manager.update_order_status(order_id, new_status)
-        
-        if success:
-            return jsonify({
-                "message": f"Estado actualizado a: {new_status}",
-                "order_id": order_id,
-                "status": "success"
-            })
-        else:
-            return jsonify({"error": "No se pudo actualizar el estado"}), 500
-            
-    except Exception as e:
-        logger.error(f"❌ Error actualizando estado: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/pos/dashboard', methods=['GET'])
-def pos_dashboard():
-    """Dashboard simple para ver el estado del POS"""
-    try:
-        orders = firebase_manager.get_pending_orders()
-        
-        # Contar por estados
-        stats = {
-            'total': len(orders),
-            'listo_para_preparar': 0,
-            'preparando': 0,
-            'listo': 0
-        }
-        
-        for order in orders:
-            status = order.get('pos_status', 'listo_para_preparar')
-            if status in stats:
-                stats[status] += 1
+        logger.info(f"📋 Enviando {len(formatted_orders)} pedidos al POS")
         
         return jsonify({
-            "statistics": stats,
-            "recent_orders": orders[:10],  # Últimos 10 pedidos
-            "firebase_status": "connected" if firebase_manager.db else "disconnected"
+            "status": "success",
+            "orders": formatted_orders,
+            "count": len(formatted_orders),
+            "timestamp": datetime.now().isoformat()
         })
         
     except Exception as e:
-        logger.error(f"❌ Error en dashboard POS: {str(e)}")
+        logger.error(f"❌ Error obteniendo pedidos POS: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "orders": []
+        }), 500
+
+@app.route('/pos/order/<order_id>/status', methods=['PUT'])
+def update_pos_order_status(order_id):
+    """Actualizar estado de pedido desde el POS"""
+    try:
+        data = request.get_json()
+        new_status = data.get('status', 'nuevo')
+        
+        # Estados válidos para el POS
+        valid_statuses = ['nuevo', 'preparando', 'listo', 'entregado', 'cancelado']
+        
+        if new_status not in valid_statuses:
+            return jsonify({
+                "error": f"Estado inválido. Debe ser uno de: {valid_statuses}"
+            }), 400
+        
+        # Actualizar en Firebase
+        success = firebase_manager.update_order_status(order_id, {
+            'pos_status': new_status,
+            'last_updated': datetime.now().isoformat()
+        })
+        
+        if success:
+            logger.info(f"✅ Estado del pedido {order_id} actualizado a: {new_status}")
+            return jsonify({
+                "status": "success",
+                "message": f"Pedido actualizado a {new_status}",
+                "order_id": order_id,
+                "new_status": new_status
+            })
+        else:
+            return jsonify({"error": "No se pudo actualizar el pedido"}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Error actualizando estado POS: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/pos/sync', methods=['POST'])
+def sync_pos_orders():
+    """Sincronizar pedidos entre web y POS"""
+    try:
+        # Obtener pedidos nuevos desde Firebase
+        orders = firebase_manager.get_orders_by_status('approved')
+        
+        # Filtrar solo pedidos no procesados por el POS
+        new_orders = []
+        for order in orders:
+            if order.get('pos_status', 'nuevo') == 'nuevo':
+                new_orders.append(order)
+        
+        logger.info(f"🔄 Sincronizando {len(new_orders)} pedidos nuevos")
+        
+        return jsonify({
+            "status": "success",
+            "new_orders": len(new_orders),
+            "orders": new_orders,
+            "message": f"Sincronización completada: {len(new_orders)} pedidos nuevos"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error en sincronización POS: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@app.route('/pos/stats', methods=['GET'])
+def get_pos_stats():
+    """Obtener estadísticas para el POS"""
+    try:
+        orders = firebase_manager.get_all_orders()
+        
+        # Calcular estadísticas
+        stats = {
+            'total_orders': len(orders),
+            'pending_orders': 0,
+            'completed_orders': 0,
+            'total_revenue': 0,
+            'orders_by_status': {
+                'nuevo': 0,
+                'preparando': 0,
+                'listo': 0,
+                'entregado': 0,
+                'cancelado': 0
+            },
+            'orders_today': 0
+        }
+        
+        today = datetime.now().date()
+        
+        for order in orders:
+            # Contar por estado POS
+            pos_status = order.get('pos_status', 'nuevo')
+            if pos_status in stats['orders_by_status']:
+                stats['orders_by_status'][pos_status] += 1
+            
+            # Contar pagos aprobados
+            if order.get('payment_status') == 'approved':
+                stats['completed_orders'] += 1
+                stats['total_revenue'] += order.get('total', 0)
+            else:
+                stats['pending_orders'] += 1
+            
+            # Contar pedidos de hoy
+            try:
+                order_date = datetime.fromisoformat(order.get('timestamp', '')).date()
+                if order_date == today:
+                    stats['orders_today'] += 1
+            except:
+                pass
+        
+        return jsonify({
+            "status": "success",
+            "statistics": stats,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo estadísticas POS: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@app.route('/pos/test', methods=['GET'])
+def test_pos_connection():
+    """Probar conexión del POS"""
+    try:
+        # Verificar conexión a Firebase
+        firebase_status = "connected" if firebase_manager.db else "disconnected"
+        
+        # Contar pedidos
+        orders = firebase_manager.get_all_orders()
+        order_count = len(orders)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Conexión POS exitosa",
+            "firebase_status": firebase_status,
+            "order_count": order_count,
+            "server_time": datetime.now().isoformat(),
+            "endpoints": {
+                "get_orders": "/pos/orders",
+                "update_status": "/pos/order/<id>/status",
+                "sync": "/pos/sync",
+                "stats": "/pos/stats"
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error en test POS: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
 @app.errorhandler(404)
 def not_found(error):

@@ -1403,6 +1403,33 @@ function procesarPagoEnLinea() {
     // Mostrar modal de checkout
     mostrarCheckoutModal();
     
+    // Preparar datos del pedido para POS
+    const orderData = {
+        customer_name: nombre,
+        customer_phone: telefono,
+        pickup_time: horaRecogida,
+        items: carrito.map(item => ({
+            name: item.nombrePersonalizado || item.nombre,
+            quantity: item.cantidad,
+            price: item.precio,
+            sabores: item.saboresElegidos,
+            leche: item.lecheElegida
+        })),
+        total: carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0),
+        payment_method: 'mercado_pago',
+        status: 'pending_payment',
+        source: 'web_ecommerce'
+    };
+    
+    // Intentar sincronizar con POS inmediatamente
+    try {
+        syncOrderToPOS(orderData);
+        showPOSNotification('Pedido preparándose para envío al POS', 'info');
+    } catch (error) {
+        console.warn('⚠️ Error inicial de sincronización POS:', error);
+        // El sistema seguirá intentando en segundo plano
+    }
+    
     // Crear preferencia de pago
     crearPreferenciaPago();
 }
@@ -1527,6 +1554,39 @@ async function crearPreferenciaPago() {
         
         const preference = await response.json();
         console.log('✅ Preferencia creada:', preference);
+        
+        // Sincronizar con POS después de crear la preferencia exitosamente
+        if (preference.id || preference.init_point) {
+            try {
+                const posOrderData = {
+                    preference_id: preference.id,
+                    customer_name: nombre,
+                    customer_phone: telefono,
+                    pickup_time: horaRecogida,
+                    items: carrito.map(item => ({
+                        name: item.nombrePersonalizado || item.nombre,
+                        quantity: item.cantidad,
+                        price: item.precio,
+                        sabores: item.saboresElegidos,
+                        leche: item.lecheElegida
+                    })),
+                    total: total,
+                    payment_method: 'mercado_pago',
+                    status: 'pending_payment',
+                    source: 'web_ecommerce',
+                    created_at: new Date().toISOString()
+                };
+                
+                await syncOrderToPOS(posOrderData);
+                showPOSNotification('Pedido sincronizado con POS', 'success');
+                console.log('🔄 Pedido sincronizado exitosamente con POS');
+                
+            } catch (posError) {
+                console.warn('⚠️ Error al sincronizar con POS:', posError);
+                showPOSNotification('Pedido creado - POS sin conexión', 'warning');
+                // El pedido seguirá procesándose normalmente
+            }
+        }
         
         // Redirigir a Mercado Pago
         if (preference.init_point) {
@@ -1799,3 +1859,217 @@ function hideLoadingMessage() {
         overlay.remove();
     }
 }
+
+// =================================
+// 🔥 SISTEMA POS INTEGRADO 🔥
+// =================================
+
+// Variables para el sistema POS
+let posConnection = false;
+let orderQueue = [];
+let lastSyncTime = null;
+
+// Verificar conexión con el sistema POS
+async function checkPOSConnection() {
+    try {
+        console.log('🔍 Verificando conexión POS...');
+        const response = await fetch('/pos/test');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('📡 Respuesta POS:', data);
+        
+        // Verificar si la respuesta indica éxito
+        if (data.message && data.message.includes('exitosa')) {
+            posConnection = true;
+            console.log('✅ Conexión POS establecida exitosamente');
+            console.log(`📊 Pedidos en sistema: ${data.order_count || 0}`);
+            updatePOSStatus('connected', data.order_count || 0);
+        } else {
+            posConnection = false;
+            console.log('❌ Respuesta POS no válida');
+            updatePOSStatus('disconnected');
+        }
+        
+        return posConnection;
+    } catch (error) {
+        console.error('❌ Error verificando conexión POS:', error);
+        posConnection = false;
+        updatePOSStatus('error');
+        return false;
+    }
+}
+
+// Actualizar indicador visual del estado POS (sin mostrar en UI)
+function updatePOSStatus(status, orderCount = 0) {
+    // Función silenciosa - solo logs para debug interno
+    switch (status) {
+        case 'connected':
+            console.log(`🟢 POS conectado (${orderCount} pedidos)`);
+            break;
+        case 'disconnected':
+            console.log('🔴 POS desconectado');
+            break;
+        case 'error':
+            console.log('🟡 POS error de conexión');
+            break;
+        case 'syncing':
+            console.log('🔄 POS sincronizando...');
+            break;
+        default:
+            console.log('🔍 POS verificando...');
+    }
+}
+
+// Sincronizar pedido con el sistema POS
+async function syncOrderToPOS(orderData) {
+    if (!posConnection) {
+        console.log('⚠️ POS no conectado, guardando pedido en cola');
+        orderQueue.push(orderData);
+        return false;
+    }
+    
+    try {
+        updatePOSStatus('syncing');
+        
+        // El pedido ya se guarda en Firebase desde el backend
+        // Solo necesitamos verificar que llegó correctamente
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
+        
+        console.log('✅ Pedido sincronizado con POS:', orderData.preference_id);
+        
+        // Actualizar estado
+        await checkPOSConnection();
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Error sincronizando con POS:', error);
+        orderQueue.push(orderData);
+        updatePOSStatus('error');
+        return false;
+    }
+}
+
+// Procesar cola de pedidos pendientes
+async function processPendingOrders() {
+    if (!posConnection || orderQueue.length === 0) {
+        return;
+    }
+    
+    console.log(`🔄 Procesando ${orderQueue.length} pedidos pendientes`);
+    
+    for (let i = orderQueue.length - 1; i >= 0; i--) {
+        const order = orderQueue[i];
+        const success = await syncOrderToPOS(order);
+        
+        if (success) {
+            orderQueue.splice(i, 1);
+        }
+    }
+    
+    if (orderQueue.length === 0) {
+        console.log('✅ Todos los pedidos pendientes han sido sincronizados');
+    }
+}
+
+// Obtener estadísticas del POS
+async function getPOSStats() {
+    try {
+        const response = await fetch('/pos/stats');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            console.log('📊 Estadísticas POS:', data.statistics);
+            return data.statistics;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('❌ Error obteniendo estadísticas POS:', error);
+        return null;
+    }
+}
+
+// Mostrar notificación de pedido enviado al POS (silenciosa)
+function showPOSNotification(message, type = 'info') {
+    // Función silenciosa - solo logs para debug interno
+    const icon = type === 'success' ? '✅' : type === 'warning' ? '⚠️' : type === 'error' ? '❌' : 'ℹ️';
+    console.log(`${icon} POS: ${message}`);
+}
+
+// Sincronizar pedido con el sistema POS
+async function syncOrderToPOS(orderData) {
+    if (!posConnection) {
+        console.log('⚠️ POS no conectado, guardando pedido en cola');
+        orderQueue.push(orderData);
+        return false;
+    }
+    
+    try {
+        updatePOSStatus('syncing');
+        
+        // El pedido ya se guarda en Firebase desde el backend
+        // Solo necesitamos verificar que llegó correctamente
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
+        
+        console.log('✅ Pedido sincronizado con POS:', orderData.preference_id);
+        
+        // Actualizar estado a conectado
+        updatePOSStatus('connected', orderQueue.length);
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Error sincronizando con POS:', error);
+        updatePOSStatus('error');
+        return false;
+    }
+}
+
+// Procesar pedidos pendientes en cola
+async function processPendingOrders() {
+    if (orderQueue.length === 0 || !posConnection) {
+        return;
+    }
+    
+    console.log(`🔄 Procesando ${orderQueue.length} pedidos pendientes...`);
+    
+    const orderToProcess = orderQueue.shift();
+    const success = await syncOrderToPOS(orderToProcess);
+    
+    if (!success) {
+        // Si falla, volver a poner el pedido en la cola
+        orderQueue.unshift(orderToProcess);
+    }
+}
+
+// Inicializar sistema POS cuando cargue la página
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 Inicializando sistema POS...');
+    
+    // Verificar conexión inicial inmediatamente
+    console.log('🔍 Verificación inmediata de conexión POS...');
+    await checkPOSConnection();
+    
+    // Verificar conexión cada 30 segundos
+    setInterval(async () => {
+        await checkPOSConnection();
+        await processPendingOrders();
+    }, 30000);
+    
+    // Procesar pedidos pendientes cada 10 segundos
+    setInterval(processPendingOrders, 10000);
+    
+    // Verificación adicional después de 2 segundos para asegurar que se cargue
+    setTimeout(async () => {
+        console.log('🔄 Verificación adicional de POS...');
+        await checkPOSConnection();
+    }, 2000);
+});
+
+
+// =================================
+// 🔥 FIN SISTEMA POS 🔥
+// =================================

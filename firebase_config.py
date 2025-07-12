@@ -132,6 +132,31 @@ class FirebaseManager:
         except Exception as e:
             logger.error(f"❌ Error actualizando estado: {e}")
             return False
+        
+    def get_all_orders(self):
+        """Obtener todos los pedidos de Firebase"""
+        try:
+            if not self.db:
+                logger.warning("⚠️ Firebase no inicializado")
+                return []
+            
+            orders = self.db.collection('orders')\
+                           .order_by('created_at', direction=firestore.Query.DESCENDING)\
+                           .limit(50)\
+                           .stream()
+            
+            order_list = []
+            for order in orders:
+                order_data = order.to_dict()
+                order_data['id'] = order.id
+                order_list.append(order_data)
+            
+            logger.info(f"✅ Obtenidos {len(order_list)} pedidos de Firebase")
+            return order_list
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo todos los pedidos: {e}")
+            return []
 
 # Instancia global
 firebase_manager = FirebaseManager()
