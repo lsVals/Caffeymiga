@@ -71,7 +71,7 @@ const MERCADO_PAGO_CONFIG = {
     backendUrl: (() => {
         // Si estamos en GitHub Pages, usar el servidor de producción
         if (window.location.hostname.includes('github.io')) {
-            return 'https://caffeymiga.onrender.com'; // URL de producción en Render
+            return 'https://caffeymiga-1.onrender.com'; // URL real de Render
         }
         // Si estamos en localhost o IP local
         else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {

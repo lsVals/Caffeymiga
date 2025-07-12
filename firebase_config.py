@@ -29,7 +29,15 @@ class FirebaseManager:
             
             if os.getenv('ENVIRONMENT') == 'production':
                 # En producción, usar variables de entorno
-                firebase_key = os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n')
+                firebase_key = os.getenv('FIREBASE_PRIVATE_KEY', '')
+                
+                # Reemplazar \\n por saltos de línea reales
+                if '\\n' in firebase_key:
+                    firebase_key = firebase_key.replace('\\n', '\n')
+                
+                # Si no tiene el formato correcto, agregar los headers/footers
+                if firebase_key and not firebase_key.startswith('-----BEGIN PRIVATE KEY-----'):
+                    firebase_key = f"-----BEGIN PRIVATE KEY-----\n{firebase_key}\n-----END PRIVATE KEY-----"
                 
                 cred_dict = {
                     "type": "service_account",
