@@ -64,8 +64,8 @@ let carritoColapsado = false;
 
 // Configuración de Mercado Pago
 const MERCADO_PAGO_CONFIG = {
-    // IMPORTANTE: Reemplaza con tu Public Key de producción o test
-    publicKey: "TU_PUBLIC_KEY_AQUI", // Cambia por tu Public Key real
+    // IMPORTANTE: Reemplaza con tu Public Key de producción
+    publicKey: "APP_USR-e440d8d5-6f4e-464e-bff1-89b92613fd19", // 🔑 PEGA AQUÍ TU PUBLIC KEY REAL
     
     // URL de tu backend (ajusta según tu configuración)
     backendUrl: "http://localhost:3000", // Cambia por la URL de tu backend
