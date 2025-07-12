@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pago Exitoso - Caffe & Miga</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .resultado-pago {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 40px;
+            text-align: center;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .success-icon {
+            font-size: 4em;
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+        .success-title {
+            color: #28a745;
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+        .success-message {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .success-details {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .btn-volver {
+            background: #8B4513;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-volver:hover {
+            background: #6B4423;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="resultado-pago">
+        <div class="success-icon">✅</div>
+        <h1 class="success-title">¡Pago Exitoso!</h1>
+        <p class="success-message">
+            Tu pago ha sido procesado correctamente.<br>
+            Hemos enviado la confirmación por WhatsApp y tu pedido está siendo preparado.
+        </p>
+        
+        <div class="success-details">
+            <h3>📋 Próximos pasos:</h3>
+            <ul>
+                <li>✅ Tu pago fue confirmado</li>
+                <li>📱 Recibirás confirmación por WhatsApp</li>
+                <li>👨‍🍳 Tu pedido está en preparación</li>
+                <li>🏪 Podrás recogerlo en el horario seleccionado</li>
+            </ul>
+        </div>
+        
+        <button class="btn-volver" onclick="window.location.href='index_nuevo.html'">
+            🏠 Volver al inicio
+        </button>
+    </div>
+
+    <script>
+        // Enviar confirmación automática por WhatsApp cuando se carga la página
+        window.addEventListener('load', function() {
+            // Obtener parámetros de la URL si están disponibles
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentId = urlParams.get('payment_id');
+            const status = urlParams.get('status');
+            const merchantOrderId = urlParams.get('merchant_order_id');
+            
+            // Aquí podrías enviar los datos a tu backend para confirmar el pago
+            if (paymentId && status === 'approved') {
+                console.log('Pago confirmado:', { paymentId, status, merchantOrderId });
+                
+                // Opcional: Llamar a tu backend para procesar la confirmación
+                // fetch('/confirm_payment', { ... });
+            }
+        });
+    </script>
+</body>
+</html>

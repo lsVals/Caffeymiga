@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pago Cancelado - Caffe & Miga</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .resultado-pago {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 40px;
+            text-align: center;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .failure-icon {
+            font-size: 4em;
+            color: #dc3545;
+            margin-bottom: 20px;
+        }
+        .failure-title {
+            color: #dc3545;
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+        .failure-message {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .failure-options {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn-reintentar, .btn-whatsapp, .btn-volver {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 150px;
+        }
+        .btn-reintentar {
+            background: #007bff;
+            color: white;
+        }
+        .btn-reintentar:hover {
+            background: #0056b3;
+            transform: translateY(-2px);
+        }
+        .btn-whatsapp {
+            background: #25d366;
+            color: white;
+        }
+        .btn-whatsapp:hover {
+            background: #20ba5a;
+            transform: translateY(-2px);
+        }
+        .btn-volver {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-volver:hover {
+            background: #545b62;
+            transform: translateY(-2px);
+        }
+        @media (max-width: 600px) {
+            .btn-group {
+                flex-direction: column;
+            }
+            .btn-reintentar, .btn-whatsapp, .btn-volver {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="resultado-pago">
+        <div class="failure-icon">❌</div>
+        <h1 class="failure-title">Pago Cancelado</h1>
+        <p class="failure-message">
+            Tu pago no pudo ser procesado o fue cancelado.<br>
+            No te preocupes, tu pedido no se ha perdido.
+        </p>
+        
+        <div class="failure-options">
+            <h3>💡 ¿Qué puedes hacer?</h3>
+            <ul style="text-align: left;">
+                <li>🔄 Reintentar el pago con otra tarjeta</li>
+                <li>📱 Hacer el pedido por WhatsApp</li>
+                <li>💵 Pagar en efectivo en la sucursal</li>
+                <li>🏪 Pagar con terminal en sucursal</li>
+            </ul>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn-reintentar" onclick="window.location.href='index_nuevo.html'">
+                🔄 Reintentar pago
+            </button>
+            <button class="btn-whatsapp" onclick="contactarWhatsApp()">
+                📱 WhatsApp
+            </button>
+            <button class="btn-volver" onclick="window.location.href='index_nuevo.html'">
+                🏠 Volver al inicio
+            </button>
+        </div>
+    </div>
+
+    <script>
+        function contactarWhatsApp() {
+            const numeroWhatsApp = '50246007071';
+            const mensaje = `Hola! Tuve problemas con el pago en línea y me gustaría hacer mi pedido por WhatsApp. ¿Pueden ayudarme?`;
+            const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
+            window.open(urlWhatsApp, '_blank');
+        }
+    </script>
+</body>
+</html>

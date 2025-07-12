@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pago Pendiente - Caffe & Miga</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .resultado-pago {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 40px;
+            text-align: center;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .pending-icon {
+            font-size: 4em;
+            color: #ffc107;
+            margin-bottom: 20px;
+        }
+        .pending-title {
+            color: #ffc107;
+            font-size: 2em;
+            margin-bottom: 15px;
+        }
+        .pending-message {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .pending-details {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .btn-volver {
+            background: #8B4513;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-volver:hover {
+            background: #6B4423;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="resultado-pago">
+        <div class="pending-icon">⏳</div>
+        <h1 class="pending-title">Pago Pendiente</h1>
+        <p class="pending-message">
+            Tu pago está siendo procesado.<br>
+            Te notificaremos cuando se confirme.
+        </p>
+        
+        <div class="pending-details">
+            <h3>📋 Estado del pago:</h3>
+            <ul style="text-align: left;">
+                <li>⏳ Pago en proceso de verificación</li>
+                <li>📱 Te contactaremos por WhatsApp cuando se confirme</li>
+                <li>🔄 Puede tomar algunos minutos</li>
+                <li>📧 También recibirás notificación por email</li>
+            </ul>
+            
+            <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
+                <strong>💡 Nota importante:</strong><br>
+                Si tu pago se confirma, procederemos a preparar tu pedido.<br>
+                Si hay algún problema, te contactaremos inmediatamente.
+            </div>
+        </div>
+        
+        <button class="btn-volver" onclick="window.location.href='index_nuevo.html'">
+            🏠 Volver al inicio
+        </button>
+    </div>
+
+    <script>
+        // Opcional: Polling para verificar el estado del pago
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentId = urlParams.get('payment_id');
+            
+            if (paymentId) {
+                console.log('Pago pendiente:', paymentId);
+                
+                // Podrías implementar un polling para verificar el estado
+                // setInterval(() => {
+                //     checkPaymentStatus(paymentId);
+                // }, 30000); // Verificar cada 30 segundos
+            }
+        });
+    </script>
+</body>
+</html>

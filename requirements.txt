@@ -1,0 +1,8 @@
+# Dependencias para el backend de Caffe & Miga
+# Instalar con: pip install -r requirements.txt
+
+Flask==2.3.3
+Flask-CORS==4.0.0
+mercadopago==2.2.1
+python-dotenv==1.0.0
+gunicorn==21.2.0

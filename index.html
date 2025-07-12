@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caffe & Miga - Cafetería</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- SDK de Mercado Pago -->
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+</head>
+<body>
+    <header>
+      <img src="img/C&M_logo.PNG" alt="Caffe & Miga Logo" class="logo">
+      <div class="horarios-header">
+        <div class="horarios-info-header">
+          <div class="horario-dia" id="horario-hoy"></div>
+          <div class="horarios-completos">
+            <span>📅 Mar-Sáb: 12:00 PM - 8:00 PM</span>
+            <span>📅 Dom: 9:00 AM - 2:00 PM</span>
+            <span>❌ Lun: Cerrado</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="menu-navegacion">
+        <div class="menu-item" data-categoria="promociones">
+            <div class="icono">🎉</div>
+            <span>Promociones</span>
+        </div>
+        <div class="menu-item" data-categoria="frappe">
+            <div class="icono">🥤</div>
+            <span>Frappes</span>
+        </div>
+        <div class="menu-item" data-categoria="bebidas">
+            <div class="icono">🥤</div>
+            <span>Bebidas</span>
+        </div>
+        <div class="menu-item" data-categoria="bebidas-frias">
+            <div class="icono">🧊</div>
+            <span>Bebidas Frías</span>
+        </div>
+        <div class="menu-item" data-categoria="cafe-caliente">
+            <div class="icono">☕</div>
+            <span>Café Caliente</span>
+        </div>
+        <div class="menu-item" data-categoria="postres">
+            <div class="icono">🍰</div>
+            <span>Postres</span>
+        </div>
+        <div class="menu-item" data-categoria="pan">
+            <div class="icono">🍞</div>
+            <span>Pan</span>
+        </div>
+        <div class="menu-item" data-categoria="comida">
+            <div class="icono">🥪</div>
+            <span>Comida</span>
+        </div>
+        <div class="menu-item menu-pdf" onclick="abrirMenuPDF()">
+            <div class="icono">📋</div>
+            <span>Menú Completo</span>
+        </div>
+    </nav>
+
+    <section class="productos">
+        <!-- Aquí se mostrarán los productos -->
+    </section>
+
+    <!-- Carrito flotante -->
+    <div class="carrito-flotante" id="carrito-flotante">
+        <div class="carrito-header" onclick="toggleCarrito()">
+            <div class="carrito-icono">🛒</div>
+            <div class="carrito-info">
+                <span class="carrito-titulo">Mi Pedido</span>
+                <span class="carrito-contador" id="carrito-contador">0 productos</span>
+            </div>
+            <div class="carrito-total" id="carrito-total">$0</div>
+            <div class="carrito-toggle" id="carrito-toggle">▼</div>
+        </div>
+        
+        <div class="carrito-contenido" id="carrito-contenido">
+            <div class="carrito-acciones">
+                <button class="btn-vaciar" onclick="vaciarCarrito()" title="Vaciar carrito">🗑️ Vaciar</button>
+            </div>
+            <ul id="lista-carrito"></ul>
+            <button id="enviar-pedido" class="btn-pedido">Hacer Pedido</button>
+        </div>
+    </div>
+
+    <!-- Modal del formulario -->
+    <div id="formulario-modal" class="modal">
+        <div class="modal-content">
+            <span class="cerrar-modal" id="cerrar-modal">&times;</span>
+            <h2>Datos del Cliente</h2>
+            <form id="formulario">
+                <label>Nombre completo:</label>
+                <input type="text" id="nombre" placeholder="Tu nombre completo" required><br>
+        
+                <label>Teléfono:</label>
+                <input type="tel" id="telefono" placeholder="Tu número de teléfono" required><br>
+        
+                <label>¿A qué hora quieres recoger tu pedido?</label>
+                <select id="horaRecogida" required>
+                    <option value="">Selecciona un horario</option>
+                    <!-- Las opciones se llenarán dinámicamente según el día -->
+                </select>
+                <div id="horario-info" class="horario-info"></div><br>
+
+                <label>Método de pago:</label>
+                <div class="metodos-pago">
+                    <div class="metodo-pago-option">
+                        <input type="radio" id="pago-efectivo" name="metodoPago" value="efectivo" required>
+                        <label for="pago-efectivo" class="metodo-pago-label">
+                            <div class="metodo-pago-icono">💵</div>
+                            <div class="metodo-pago-info">
+                                <strong>Efectivo en sucursal</strong>
+                                <span>Paga al recoger tu pedido</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="metodo-pago-option">
+                        <input type="radio" id="pago-tarjeta" name="metodoPago" value="tarjeta" required>
+                        <label for="pago-tarjeta" class="metodo-pago-label">
+                            <div class="metodo-pago-icono">💳</div>
+                            <div class="metodo-pago-info">
+                                <strong>Pagar ahora con tarjeta</strong>
+                                <span>Pago seguro con Mercado Pago</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="metodo-pago-option">
+                        <input type="radio" id="pago-terminal" name="metodoPago" value="terminal" required>
+                        <label for="pago-terminal" class="metodo-pago-label">
+                            <div class="metodo-pago-icono">🏪</div>
+                            <div class="metodo-pago-info">
+                                <strong>Tarjeta en sucursal</strong>
+                                <span>Pago con terminal al recoger</span>
+                            </div>
+                        </label>
+                    </div>
+                </div><br>
+        
+                <button type="submit">Confirmar Pedido</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de pago con Mercado Pago -->
+    <div id="checkout-modal" class="modal">
+        <div class="modal-content">
+            <span class="cerrar-modal" id="cerrar-checkout">&times;</span>
+            <h2>💳 Pagar con Mercado Pago</h2>
+            <div class="checkout-info">
+                <div class="pedido-resumen">
+                    <h3>📋 Resumen del pedido</h3>
+                    <div id="resumen-productos"></div>
+                    <div class="total-pago">
+                        <strong>Total: $<span id="total-pago">0</span></strong>
+                    </div>
+                </div>
+                <div id="checkout-container">
+                    <!-- Aquí se cargará el checkout de Mercado Pago -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
