@@ -739,86 +739,6 @@ def save_order_to_sqlite(order_data):
         logger.error(f"❌ Error guardando en SQLite: {e}")
         return False
 
-def save_order_to_pos_database(order_data):
-    """Guardar pedido directamente en la base de datos local del POS"""
-    try:
-        # Ruta de la base de datos del POS
-        db_path = "cafeteria_sistema/pos_pedidos.db"
-        
-        # Si no existe el directorio, intentar crearlo
-        if not os.path.exists("cafeteria_sistema"):
-            logger.info("📁 Creando directorio cafeteria_sistema...")
-            os.makedirs("cafeteria_sistema", exist_ok=True)
-        
-        # Si no existe la base de datos, crearla con la tabla necesaria
-        if not os.path.exists(db_path):
-            logger.info("🗄️ Creando base de datos pos_pedidos.db...")
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            
-            # Crear tabla de pedidos
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS pedidos (
-                    id TEXT PRIMARY KEY,
-                    cliente_nombre TEXT,
-                    cliente_telefono TEXT,
-                    hora_recogida TEXT,
-                    items TEXT,
-                    total REAL,
-                    estado TEXT DEFAULT 'pendiente',
-                    metodo_pago TEXT,
-                    fecha_creacion TEXT,
-                    fecha_actualizacion TEXT
-                )
-            """)
-            
-            conn.commit()
-            conn.close()
-            logger.info("✅ Base de datos creada correctamente")
-        
-        # Conectar y guardar el pedido
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        
-        # Extraer datos del order_data
-        order_id = order_data['id']
-        customer = order_data.get('customer', {})
-        items = order_data.get('items', [])
-        
-        # Convertir items a JSON string
-        items_json = json.dumps(items, ensure_ascii=False)
-        
-        # Obtener hora de recogida
-        pickup_time = order_data.get('metadata', {}).get('pickup_time', '')
-        
-        # Insertar en la tabla pedidos
-        c.execute("""
-            INSERT OR REPLACE INTO pedidos 
-            (id, cliente_nombre, cliente_telefono, hora_recogida, items, total, estado, metodo_pago, fecha_creacion, fecha_actualizacion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            order_id,
-            customer.get('name', ''),
-            customer.get('phone', ''),
-            pickup_time,
-            items_json,
-            order_data.get('total', 0),
-            'pendiente',  # Estado inicial
-            customer.get('payment_method', 'efectivo'),
-            order_data.get('timestamp', datetime.now().isoformat()),
-            datetime.now().isoformat()
-        ))
-        
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ Pedido {order_id} guardado en base de datos local del POS")
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Error guardando en base de datos del POS: {e}")
-        return False
-
 @app.route('/pos/orders/simple', methods=['POST'])
 def pos_orders_simple():
     """Endpoint simplificado para crear pedidos sin Firebase"""
@@ -854,7 +774,7 @@ def pos_orders_simple():
 
 @app.route('/pos/orders/basic', methods=['POST'])
 def pos_orders_basic():
-    """Endpoint básico para crear pedidos - guardar en base de datos local"""
+    """Endpoint básico para crear pedidos - solo respuesta exitosa"""
     try:
         data = request.get_json()
         logger.info(f"📦 Procesando pedido básico: {data.get('payer', {}).get('name', 'Sin nombre')}")
@@ -867,54 +787,19 @@ def pos_orders_basic():
         total = sum(item.get('price', 0) * item.get('quantity', 1) for item in data['items'])
         
         # Crear ID único para el pedido
-        order_id = f"web_{int(datetime.now().timestamp())}"
+        order_id = f"basic_{int(datetime.now().timestamp())}"
         
-        # Preparar datos del pedido para la base de datos local
-        order_data_for_db = {
-            'id': order_id,
-            'customer': {
-                'name': data.get('payer', {}).get('name', ''),
-                'phone': data.get('payer', {}).get('phone', {}).get('number', ''),
-                'email': data.get('payer', {}).get('email', ''),
-                'payment_method': data.get('payment_method', 'efectivo')
-            },
-            'items': data.get('items', []),
-            'total': total,
-            'metadata': data.get('metadata', {}),
-            'timestamp': datetime.now().isoformat()
-        }
+        logger.info(f"✅ Pedido básico procesado: {order_id} - Total: ${total}")
         
-        # Intentar guardar en la base de datos local del POS
-        success = save_order_to_pos_database(order_data_for_db)
-        
-        if success:
-            logger.info(f"✅ Pedido básico guardado en BD local: {order_id} - Total: ${total}")
-            
-            return jsonify({
-                "success": True,
-                "message": f"Pedido {data.get('payment_method')} procesado y guardado correctamente",
-                "order_id": order_id,
-                "total": total,
-                "payment_method": data.get('payment_method', 'efectivo'),
-                "customer_name": data.get('payer', {}).get('name', ''),
-                "pickup_time": data.get('metadata', {}).get('pickup_time', ''),
-                "saved_to_pos": True
-            })
-        else:
-            # Si falla guardar en BD, al menos devolver respuesta exitosa
-            logger.warning(f"⚠️ No se pudo guardar en BD local, pero pedido procesado: {order_id}")
-            
-            return jsonify({
-                "success": True,
-                "message": f"Pedido {data.get('payment_method')} procesado (sin guardar en BD local)",
-                "order_id": order_id,
-                "total": total,
-                "payment_method": data.get('payment_method', 'efectivo'),
-                "customer_name": data.get('payer', {}).get('name', ''),
-                "pickup_time": data.get('metadata', {}).get('pickup_time', ''),
-                "saved_to_pos": False,
-                "warning": "No se pudo guardar en base de datos local"
-            })
+        return jsonify({
+            "success": True,
+            "message": f"Pedido {data.get('payment_method')} procesado correctamente (modo básico)",
+            "order_id": order_id,
+            "total": total,
+            "payment_method": data.get('payment_method', 'efectivo'),
+            "customer_name": data.get('payer', {}).get('name', ''),
+            "pickup_time": data.get('metadata', {}).get('pickup_time', '')
+        })
         
     except Exception as e:
         logger.error(f"❌ Error procesando pedido básico: {str(e)}")
