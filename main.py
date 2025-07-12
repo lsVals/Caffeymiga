@@ -272,9 +272,71 @@ def get_payment_status(payment_id):
 # 🔥 SISTEMA POS INTEGRADO 🔥
 # ===============================
 
-@app.route('/pos/orders', methods=['GET'])
-def get_pos_orders():
-    """Obtener todos los pedidos para el sistema POS"""
+@app.route('/pos/orders', methods=['GET', 'POST'])
+def pos_orders():
+    """Obtener todos los pedidos para el sistema POS o crear un pedido nuevo (efectivo/terminal)"""
+    
+    if request.method == 'POST':
+        # Crear pedido en efectivo o terminal
+        try:
+            data = request.get_json()
+            logger.info(f"📦 Procesando pedido {data.get('payment_method', 'efectivo')}: {data.get('payer', {}).get('name', 'Sin nombre')}")
+            
+            # Validar datos requeridos
+            if not data.get('items') or len(data['items']) == 0:
+                return jsonify({"error": "No se encontraron items en el pedido"}), 400
+            
+            # Calcular total
+            total = sum(item.get('unit_price', 0) * item.get('quantity', 1) for item in data['items'])
+            
+            # Crear ID único para el pedido
+            order_id = f"efectivo_{int(datetime.now().timestamp())}"
+            
+            # Estructura del pedido para Firebase
+            order_data = {
+                'id': order_id,
+                'preference_id': order_id,
+                'firebase_id': order_id,
+                'timestamp': datetime.now().isoformat(),
+                'status': 'pending',
+                'payment_status': 'pending_cash' if data.get('payment_method') == 'efectivo' else 'pending_terminal',
+                'pos_status': 'nuevo',
+                'total': total,
+                'customer': {
+                    'name': data.get('payer', {}).get('name', ''),
+                    'phone': data.get('payer', {}).get('phone', {}).get('number', ''),
+                    'email': data.get('payer', {}).get('email', ''),
+                    'payment_method': data.get('payment_method', 'efectivo')
+                },
+                'items': data.get('items', []),
+                'metadata': data.get('metadata', {}),
+                'notes': data.get('notes', ''),
+                'source': 'web_cash_order'
+            }
+            
+            # Guardar en Firebase
+            firebase_result = firebase_manager.save_order(order_data)
+            
+            if firebase_result:
+                logger.info(f"✅ Pedido {data.get('payment_method')} guardado: {order_id}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"Pedido {data.get('payment_method')} procesado correctamente",
+                    "order_id": order_id,
+                    "total": total,
+                    "payment_method": data.get('payment_method'),
+                    "customer_name": data.get('payer', {}).get('name', ''),
+                    "pickup_time": data.get('metadata', {}).get('pickup_time', '')
+                })
+            else:
+                return jsonify({"error": "Error guardando el pedido"}), 500
+                
+        except Exception as e:
+            logger.error(f"❌ Error procesando pedido efectivo/terminal: {str(e)}")
+            return jsonify({"error": f"Error al procesar el pedido: {str(e)}"}), 500
+    
+    # Si es GET, continuar con la lógica original
     try:
         orders = firebase_manager.get_all_orders()
         
