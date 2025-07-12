@@ -24,19 +24,53 @@ class FirebaseManager:
                 logger.info("✅ Firebase ya inicializado - usando instancia existente")
                 return
             
-            # Verificar si existe el archivo de credenciales
+            # Verificar si existe el archivo de credenciales o usar variables de entorno
+            import os
+            
+            if os.getenv('ENVIRONMENT') == 'production':
+                # En producción, usar variables de entorno
+                firebase_key = os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n')
+                
+                cred_dict = {
+                    "type": "service_account",
+                    "project_id": "caffeymigapedidos",
+                    "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID', '171d1d626b0e55518e44a2ea4c912d587e03ba31'),
+                    "private_key": firebase_key,
+                    "client_email": "firebase-adminsdk-fbsvc@caffeymigapedidos.iam.gserviceaccount.com",
+                    "client_id": "100510796799572602499",
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40caffeymigapedidos.iam.gserviceaccount.com",
+                    "universe_domain": "googleapis.com"
+                }
+                cred = credentials.Certificate(cred_dict)
+            else:
+                # En desarrollo local, usar archivo JSON
+                try:
+                    cred = credentials.Certificate("firebase-credentials.json")
+                    logger.info("📁 Usando credenciales de Firebase desde archivo local")
+                except FileNotFoundError:
+                    logger.warning("⚠️ Archivo firebase-credentials.json no encontrado")
+                    cred = credentials.ApplicationDefault()
+                    logger.info("🔄 Usando credenciales por defecto de Firebase")
+            
             try:
-                # Usar credenciales del archivo JSON (cuando las tengas)
-                cred = credentials.Certificate("firebase-credentials.json")
                 firebase_admin.initialize_app(cred)
                 logger.info("✅ Firebase inicializado con credenciales")
-            except FileNotFoundError:
-                # Usar credenciales por defecto del entorno (para desarrollo)
-                cred = credentials.ApplicationDefault()
-                firebase_admin.initialize_app(cred, {
-                    'projectId': 'caffeymigapedidos'  # Tu proyecto Firebase
-                })
-                logger.info("✅ Firebase inicializado con credenciales por defecto")
+            except Exception as init_error:
+                logger.error(f"❌ Error inicializando Firebase: {init_error}")
+                # Intentar con credenciales por defecto como fallback
+                try:
+                    cred = credentials.ApplicationDefault()
+                    firebase_admin.initialize_app(cred, {
+                        'projectId': 'caffeymigapedidos'
+                    })
+                    logger.info("✅ Firebase inicializado con credenciales por defecto")
+                except Exception as fallback_error:
+                    logger.error(f"❌ Error con credenciales por defecto: {fallback_error}")
+                    self.db = None
+                    return
             
             self.db = firestore.client()
             
