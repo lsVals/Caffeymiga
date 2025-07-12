@@ -1,0 +1,1188 @@
+import tkinter as tk
+from tkinter import messagebox, filedialog
+from datetime import datetime, date, time
+import pandas as pd
+import os
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import tempfile
+import win32print
+import win32ui
+import tkinter.simpledialog as simpledialog
+import matplotlib.pyplot as plt
+from functools import partial
+import logging
+import pdfplumber
+import sqlite3
+import tkinter.ttk as ttk
+import shutil
+
+# Archivos base
+ARCHIVO_INVENTARIO = "inventario.xlsx"
+ARCHIVO_TICKETS = "tickets.xlsx"
+ARCHIVO_EXCEL = "tickets.xlsx"  # Usado para agregar_a_excel
+
+# Variables globales
+usuario_valido = "admin"
+contrasena_valida = "admin"
+ventanas_abiertas = {"menu": False, "inventario": False, "compra": False, "historial": False}
+
+# Configuración básica de logging
+logging.basicConfig(
+    filename="cafeteria_log.txt",
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)s:%(message)s"
+)
+
+# Funciones de Inventario
+def cargar_inventario():
+    try:
+        if not os.path.exists(ARCHIVO_INVENTARIO):
+            df = pd.DataFrame(columns=["Producto", "Unidades", "Precio", "TipoUnidad"])
+            df.to_excel(ARCHIVO_INVENTARIO, index=False)
+        df = pd.read_excel(ARCHIVO_INVENTARIO)
+        if "TipoUnidad" not in df.columns:
+            df["TipoUnidad"] = "Unidad"
+        return df
+    except PermissionError:
+        messagebox.showerror(
+            "Archivo en uso",
+            "El archivo de inventario está abierto en otro programa (por ejemplo, Excel). Ciérralo e inténtalo de nuevo."
+        )
+        logging.error("Permiso denegado al acceder a inventario.xlsx")
+        return pd.DataFrame(columns=["Producto", "Unidades", "Precio", "TipoUnidad"])
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo cargar el inventario:\n{e}")
+        logging.error(f"Error al cargar inventario: {e}")
+        return pd.DataFrame(columns=["Producto", "Unidades", "Precio", "TipoUnidad"])
+
+def guardar_inventario(df):
+    try:
+        df.to_excel(ARCHIVO_INVENTARIO, index=False)
+    except PermissionError:
+        messagebox.showerror(
+            "Archivo en uso",
+            "El archivo de inventario está abierto en otro programa (por ejemplo, Excel). Ciérralo e inténtalo de nuevo."
+        )
+        logging.error("Permiso denegado al guardar inventario.xlsx")
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo guardar el inventario:\n{e}")
+        logging.error(f"Error al guardar inventario: {e}")
+
+def inicializar_db():
+    conn = sqlite3.connect('ventas.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT,
+            producto TEXT,
+            cantidad INTEGER,
+            precio REAL,
+            pago TEXT,
+            estado TEXT,
+            motivo_cancelacion TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+inicializar_db()
+
+def obtener_ventas():
+    conn = sqlite3.connect('ventas.db')
+    df = pd.read_sql_query("SELECT * FROM tickets", conn)
+    conn.close()
+    return df
+
+# Cambia la estructura para usar un solo root y un Frame principal
+class AppCafeteria(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Sistema de Ventas")
+        self.geometry("600x700")
+        self.configure(bg="#f0f0f0")
+        self.frames = {}
+        self.promocion_frappes_activa = False  # Variable de instancia para la promoción (no usar 'self' fuera de clase)
+
+        # Reinicio automático antes de las 9:00 am
+        self.reiniciar_dia_si_corresponde()
+
+        self.show_login()
+
+    def reiniciar_dia_si_corresponde(self):
+        archivo_reinicio = "ultimo_reinicio.txt"
+        hoy = date.today()
+        ahora = datetime.now().time()
+        hora_limite = time(9, 0)  # 9:00 am
+
+        if os.path.exists(archivo_reinicio):
+            with open(archivo_reinicio, "r") as f:
+                ultima_fecha = f.read().strip()
+        else:
+            ultima_fecha = ""
+
+       
+
+    def clear_frames(self):
+        for frame in self.frames.values():
+            frame.pack_forget()
+            frame.place_forget()  # <-- Añade esto para limpiar también los frames con place
+
+    def show_login(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#235A6F")
+        frame.pack(fill="both", expand=True)
+        self.frames["login"] = frame
+
+        # Card grande y centrado para el login
+        card = tk.Frame(frame, bg="#FFFFFF", bd=0, relief="flat", highlightbackground="#235A6F", highlightthickness=4)
+        card.place(relx=0.5, rely=0, anchor="n", y=40)
+
+        tk.Label(card, text="☕", font=("Segoe UI Emoji", 80, "bold"), bg="#FFFFFF", fg="#235A6F").pack(pady=(35, 10))
+        tk.Label(card, text="Sistema de Ventas", font=("Segoe UI", 32, "bold"), bg="#FFFFFF", fg="#235A6F").pack(pady=(0, 30))
+
+        tk.Label(card, text="Usuario", font=("Segoe UI", 18, "bold"), bg="#FFFFFF", fg="#235A6F", anchor="w").pack(fill="x", padx=60)
+        entry_usuario = tk.Entry(card, font=("Segoe UI", 20), width=22, bd=0, relief="flat", highlightbackground="#235A6F", justify="center", bg="#F4F6F7", fg="#222", highlightthickness=2)
+        entry_usuario.pack(padx=60, pady=(0, 18))
+        tk.Label(card, text="Contraseña", font=("Segoe UI", 18, "bold"), bg="#FFFFFF", fg="#235A6F", anchor="w").pack(fill="x", padx=60)
+        entry_contrasena = tk.Entry(card, show="*", font=("Segoe UI", 20), width=22, bd=0, relief="flat", highlightbackground="#235A6F", justify="center", bg="#F4F6F7", fg="#222", highlightthickness=2)
+        entry_contrasena.pack(padx=60, pady=(0, 30))
+
+        def verificar_login(event=None):
+            if entry_usuario.get() == usuario_valido and entry_contrasena.get() == contrasena_valida:
+                self.show_menu()
+            else:
+                messagebox.showerror("Error", "Usuario o contraseña incorrectos.")
+
+        entry_usuario.bind("<Return>", verificar_login)
+        entry_contrasena.bind("<Return>", verificar_login)
+
+        tk.Button(
+            card, text="Entrar", command=verificar_login,
+            bg="#235A6F", fg="white", font=("Segoe UI", 24, "bold"),
+            width=18, height=2, bd=0, activebackground="#183B4A", activeforeground="white",
+            cursor="hand2", relief="flat", highlightthickness=0
+        ).pack(pady=18)
+
+    def show_menu(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#235A6F")
+        frame.pack(fill="both", expand=True)
+        self.frames["menu"] = frame
+
+        # Card centrado y adaptable
+        card = tk.Frame(frame, bg="#FFFFFF", bd=0, relief="flat",
+                        highlightbackground="#235A6F", highlightthickness=4, width=480)
+        card.pack(expand=True)
+        # No uses pack_propagate(False) aquí
+
+        tk.Label(
+            card,
+            text="Sistema de Ventas",
+            font=("Segoe UI", 32, "bold"),
+            bg="#FFFFFF",
+            fg="#235A6F"
+        ).pack(pady=(40, 30))
+
+        botones = [
+            ("Generar Compra", self.show_compra),
+            ("Ver Inventario", self.show_inventario),
+            ("Ver Historial de Tickets", self.show_historial),
+            ("Resumen de Ventas", self.show_ventas),
+            ("Ver Ventas (DB)", self.show_ventas_db),
+        ]
+        for texto, comando in botones:
+            tk.Button(
+                card,
+                text=texto,
+                command=comando,
+                font=("Segoe UI", 18, "bold"),
+                width=22,
+                height=2,
+                bg="#235A6F",
+                fg="white",
+                bd=0,
+                activebackground="#183B4A",
+                activeforeground="white",
+                cursor="hand2",
+                highlightthickness=0
+            ).pack(pady=10)
+
+        tk.Button(
+            card,
+            text="Salir del Programa",
+            command=self.destroy,
+            font=("Segoe UI", 18, "bold"),
+            width=22,
+            height=2,
+            bg="#E74C3C",
+            fg="white",
+            bd=0,
+            activebackground="#922B21",
+            activeforeground="white",
+            cursor="hand2",
+            highlightthickness=0
+        ).pack(pady=18)
+
+    def show_inventario(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#F4F6F7")
+        frame.pack(fill="both", expand=True)
+        self.frames["inventario"] = frame
+
+        # Canvas + scrollbar para inventario
+        canvas = tk.Canvas(frame, bg="#F4F6F7", highlightthickness=0)
+        scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        scrollable_frame = tk.Frame(canvas, bg="#F4F6F7")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        def on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        scrollable_frame.bind("<Configure>", on_configure)
+
+        # Card centrado y ancho fijo
+        card = tk.Frame(
+            scrollable_frame,
+            bg="#FFFFFF",
+            bd=0,
+            relief="flat",
+            highlightbackground="#235A6F",
+            highlightthickness=4,
+            width=900  # O prueba con 800 si tu ventana es más pequeña
+        )
+        card.pack(pady=40)
+        # No uses card.pack_propagate(False)
+
+        tk.Label(card, text="Inventario", font=("Segoe UI", 28, "bold"), bg="#FFFFFF", fg="#235A6F").pack(pady=20)
+
+        form_frame = tk.Frame(card, bg="#FFFFFF")
+        form_frame.pack(pady=10)
+
+        tk.Label(form_frame, text="Producto:", bg="#FFFFFF", font=("Segoe UI", 16, "bold"), fg="#235A6F", anchor="center", width=14).grid(row=0, column=0, padx=8, pady=8)
+        entry_producto = tk.Entry(form_frame, font=("Segoe UI", 15), justify="center", bd=0, relief="flat", bg="#F4F6F7", fg="#222", highlightthickness=2, highlightbackground="#235A6F")
+        entry_producto.grid(row=0, column=1, padx=8, pady=8)
+
+        tk.Label(form_frame, text="Unidades:", bg="#FFFFFF", font=("Segoe UI", 16, "bold"), fg="#235A6F", anchor="center", width=14).grid(row=1, column=0, padx=8, pady=8)
+        entry_unidades = tk.Entry(form_frame, font=("Segoe UI", 15), justify="center", bd=0, relief="flat", bg="#F4F6F7", fg="#222", highlightthickness=2, highlightbackground="#235A6F")
+        entry_unidades.grid(row=1, column=1, padx=8, pady=8)
+
+        tk.Label(form_frame, text="Precio:", bg="#FFFFFF", font=("Segoe UI", 16, "bold"), fg="#235A6F", anchor="center", width=14).grid(row=2, column=0, padx=8, pady=8)
+        entry_precio = tk.Entry(form_frame, font=("Segoe UI", 15), justify="center", bd=0, relief="flat", bg="#F4F6F7", fg="#222", highlightthickness=2, highlightbackground="#235A6F")
+        entry_precio.grid(row=2, column=1, padx=8, pady=8)
+
+        tk.Label(form_frame, text="Tipo de Unidad:", bg="#FFFFFF", font=("Segoe UI", 16, "bold"), fg="#235A6F", anchor="center", width=14).grid(row=3, column=0, padx=8, pady=8)
+        unidad_var = tk.StringVar(value="Unidad")
+        opciones_unidad = ["Unidad", "Sin control"]
+        tk.OptionMenu(form_frame, unidad_var, *opciones_unidad).grid(row=3, column=1, padx=8, pady=8)
+
+        def agregar_producto():
+            producto = entry_producto.get().strip()
+            try:
+                unidades = int(entry_unidades.get())
+                precio = float(entry_precio.get())
+            except ValueError:
+                messagebox.showerror("Error", "Unidades o precio inválidos.")
+                return
+
+            if not producto:
+                messagebox.showerror("Error", "Nombre de producto vacío.")
+                return
+
+            tipo_unidad = unidad_var.get()
+            df = cargar_inventario()
+            if "TipoUnidad" not in df.columns:
+                df["TipoUnidad"] = "Unidad"
+            if producto in df["Producto"].values:
+                df.loc[df["Producto"] == producto, "Unidades"] += unidades
+                df.loc[df["Producto"] == producto, "TipoUnidad"] = tipo_unidad
+                df.loc[df["Producto"] == producto, "Precio"] = precio
+            else:
+                nueva_fila = pd.DataFrame([[producto, unidades, precio, tipo_unidad]], columns=["Producto", "Unidades", "Precio", "TipoUnidad"])
+                df = pd.concat([df, nueva_fila], ignore_index=True)
+
+            guardar_inventario(df)
+            messagebox.showinfo("Éxito", "Producto agregado correctamente.")
+            entry_producto.delete(0, tk.END)
+            entry_unidades.delete(0, tk.END)
+            entry_precio.delete(0, tk.END)
+            unidad_var.set("Unidad")
+            mostrar_tabla()
+
+        tk.Button(card, text="Agregar", command=agregar_producto,
+                  bg="#27AE60", fg="white", font=("Segoe UI", 16, "bold"), width=15, bd=0, activebackground="#229954", activeforeground="white", cursor="hand2").pack(pady=10)
+
+        # --- Tabla con scroll propio ---
+        tabla_canvas = tk.Canvas(card, bg="#F4F6F7", highlightthickness=0, width=940, height=260)
+        tabla_scroll = tk.Scrollbar(card, orient="vertical", command=tabla_canvas.yview)
+        tabla_canvas.pack(side="left", fill="both", expand=False, padx=(20,0), pady=10)
+        tabla_scroll.pack(side="right", fill="y", pady=10)
+        tabla_canvas.configure(yscrollcommand=tabla_scroll.set)
+
+        tabla_frame = tk.Frame(tabla_canvas, bg="#F4F6F7")
+        tabla_canvas.create_window((0, 0), window=tabla_frame, anchor="nw")
+
+        def on_tabla_configure(event):
+            tabla_canvas.configure(scrollregion=tabla_canvas.bbox("all"))
+        tabla_frame.bind("<Configure>", on_tabla_configure)
+
+        def mostrar_tabla():
+            for widget in tabla_frame.winfo_children():
+                widget.destroy()
+            df = cargar_inventario()
+            if "TipoUnidad" not in df.columns:
+                df["TipoUnidad"] = "Unidad"
+            df = df[df["Producto"].notna() & (df["Producto"].astype(str).str.strip() != "")]
+            encabezados = ["Producto", "Unidades", "Precio", "Tipo de Unidad"]
+            for col, texto in enumerate(encabezados):
+                tk.Label(tabla_frame, text=texto, font=("Segoe UI", 14, "bold"), bg="#235A6F", fg="white", width=22, borderwidth=0, relief="flat", pady=8).grid(row=0, column=col, padx=1, pady=1, sticky="nsew")
+                tabla_frame.grid_columnconfigure(col, weight=1)
+            for i, row in df.iterrows():
+                color_fila = "#FFFFFF" if i % 2 == 0 else "#F4F6F7"
+                tk.Label(tabla_frame, text=row["Producto"], font=("Segoe UI", 12), bg=color_fila, fg="#222", width=22, borderwidth=0, relief="flat", pady=6).grid(row=i+1, column=0, padx=1, pady=1, sticky="nsew")
+                tk.Label(tabla_frame, text=row["Unidades"], font=("Segoe UI", 12), bg=color_fila, fg="#222", width=22, borderwidth=0, relief="flat", pady=6).grid(row=i+1, column=1, padx=1, pady=1, sticky="nsew")
+                tk.Label(tabla_frame, text=row["Precio"], font=("Segoe UI", 12), bg=color_fila, fg="#222", width=22, borderwidth=0, relief="flat", pady=6).grid(row=i+1, column=2, padx=1, pady=1, sticky="nsew")
+                tk.Label(tabla_frame, text=row["TipoUnidad"], font=("Segoe UI", 12), bg=color_fila, fg="#222", width=22, borderwidth=0, relief="flat", pady=6).grid(row=i+1, column=3, padx=1, pady=1, sticky="nsew")
+
+        mostrar_tabla()
+
+        # --- Botón siempre abajo ---
+        tk.Button(
+            card,
+            text="Volver al Menú",
+            command=self.show_menu,
+            bg="#235A6F",
+            fg="white",
+            font=("Segoe UI", 16, "bold"),
+            bd=0,
+            activebackground="#183B4A",
+            activeforeground="white",
+            cursor="hand2",
+            highlightthickness=0
+        ).pack(pady=18)
+
+    def show_compra(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#FFFFFF")
+        frame.pack(fill="both", expand=True)
+        self.frames["compra"] = frame
+
+        # Carga el inventario solo una vez y guárdalo en memoria
+        self.productos = cargar_inventario()
+
+        # Canvas + scrollbar para productos y ticket
+        canvas = tk.Canvas(frame, bg="#FFFFFF", highlightthickness=0)
+        scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        scrollable_frame = tk.Frame(canvas, bg="#FFFFFF")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        def on_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        scrollable_frame.bind("<Configure>", on_configure)
+
+        productos = cargar_inventario()
+        self.entradas_productos = {}
+
+        tk.Label(scrollable_frame, text="Seleccione los productos:", font=("Arial", 16, "bold"), bg="#FFFFFF").pack(pady=10)
+
+        productos_por_fila = 3  # Cambia a 2 o 4 si prefieres más o menos columnas
+        productos_frame = tk.Frame(scrollable_frame, bg="#FFFFFF")
+        productos_frame.pack(pady=10)
+
+        for idx, row in productos.iterrows():
+            col = idx % productos_por_fila
+            fila = idx // productos_por_fila
+            frame_prod = tk.Frame(productos_frame, bg="#FFFFFF", pady=5, padx=5, relief="groove", bd=1)
+            frame_prod.grid(row=fila, column=col, padx=8, pady=8, sticky="nsew")
+            tk.Label(frame_prod, text=f"{row['Producto']} (${row['Precio']})", font=("Arial", 14),
+                     bg="#FFFFFF", width=18, anchor="w").pack(side="top", pady=2)
+
+            cantidad_var = tk.IntVar(value=0)
+
+            def aumentar(cvar=cantidad_var):
+                cvar.set(cvar.get() + 1)
+                self.previsualizar_ticket()  # <-- Esto es lo importante
+
+            def disminuir(cvar=cantidad_var):
+                if cvar.get() > 0:
+                    cvar.set(cvar.get() - 1)
+                    self.previsualizar_ticket()
+
+            tk.Button(frame_prod, text="-", font=("Arial", 12), width=2,
+                      command=disminuir).pack(side="left", padx=2)
+            tk.Label(frame_prod, textvariable=cantidad_var, font=("Arial", 14), width=4, bg="#F0F0F0").pack(side="left", padx=2)
+            tk.Button(frame_prod, text="+", font=("Arial", 12), width=2,
+                      command=aumentar).pack(side="left", padx=2)
+
+            self.entradas_productos[row["Producto"]] = cantidad_var
+
+        tk.Label(scrollable_frame, text="Método de Pago:", font=("Arial", 14), bg="#FFFFFF").pack(pady=10)
+        self.metodo_pago = tk.StringVar(value="Efectivo")
+        for pago in ["Efectivo", "Tarjeta"]:
+            tk.Radiobutton(scrollable_frame, text=pago, variable=self.metodo_pago, value=pago,
+                           font=("Arial", 13), bg="#FFFFFF", command=self.previsualizar_ticket).pack()
+
+        # Campo para billete recibido y cambio
+        self.billete_recibido_var = tk.StringVar()
+        self.cambio_var = tk.StringVar(value="Cambio: $0.00")
+
+        def actualizar_cambio(*args):
+            self.previsualizar_ticket()
+
+        frame_pago = tk.Frame(scrollable_frame, bg="#FFFFFF")
+        frame_pago.pack(pady=5)
+        tk.Label(frame_pago, text="Billete recibido:", font=("Arial", 13), bg="#FFFFFF").pack(side="left")
+        entry_billete = tk.Entry(frame_pago, textvariable=self.billete_recibido_var, font=("Arial", 13), width=10)
+        entry_billete.pack(side="left", padx=5)
+        tk.Label(frame_pago, textvariable=self.cambio_var, font=("Arial", 13), bg="#FFFFFF", fg="#229954").pack(side="left", padx=10)
+        self.billete_recibido_var.trace_add("write", actualizar_cambio)
+
+        # Vista previa del ticket
+        ticket_frame = tk.Frame(scrollable_frame, bg="#FFFFFF")
+        ticket_frame.pack(pady=10)
+
+        scroll_ticket = tk.Scrollbar(ticket_frame, orient="vertical")
+        self.ticket_texto = tk.Text(ticket_frame, width=60, height=15, font=("Courier", 12), bg="#F2F4F5", yscrollcommand=scroll_ticket.set)
+        scroll_ticket.config(command=self.ticket_texto.yview)
+        self.ticket_texto.pack(side="left", fill="both", expand=True)
+        scroll_ticket.pack(side="right", fill="y")
+        self.ticket_texto.lift()
+
+        tk.Button(scrollable_frame, text="Generar Ticket", command=self.generar_ticket,
+                  bg="#27AE60", fg="white", font=("Arial", 16)).pack(pady=15)
+
+        tk.Button(
+            scrollable_frame,
+            text="Volver al Menú",
+            command=self.show_menu,
+            bg="#3498DB",
+            fg="white",
+            font=("Arial", 16, "bold"),
+            width=25,
+            height=2
+        ).pack(pady=10)
+
+        self.previsualizar_ticket()
+
+        from datetime import datetime
+
+        def aplicar_promocion_frappes():
+            hoy = datetime.now().weekday()
+            if hoy not in [1, 4]:
+                messagebox.showinfo("Promoción no disponible", "La promoción solo aplica los martes y viernes.")
+                return
+
+            frappes = [k for k in self.entradas_productos if "frappe" in k.lower()]
+            total_frappes = sum(self.entradas_productos[k].get() for k in frappes)
+            if total_frappes < 2:
+                messagebox.showinfo("Promoción", "Debes seleccionar al menos 2 frappes para aplicar la promoción.")
+                return
+
+            self.promocion_frappes_activa = True
+            messagebox.showinfo("Promoción aplicada", "¡Promoción 2x$100 activada para frappes!\nRecuerda que solo aplica a pares de frappes.")
+            self.previsualizar_ticket()
+
+        tk.Button(scrollable_frame, text="Aplicar Promoción 2x$100 Frappes (Mar/Vie)", font=("Arial", 13), bg="#229954", fg="white", command=aplicar_promocion_frappes).pack(pady=10)
+
+    def previsualizar_ticket(self):
+        try:
+            productos = self.productos  # Usa el inventario ya cargado en memoria
+            total = 0
+            ancho_ticket = 32  # caracteres aprox para 58mm
+
+            ticket = self.centrar("Caffè & Miga", ancho_ticket) + "\n"
+            ticket += self.centrar("--- TICKET DE COMPRA ---", ancho_ticket) + "\n"
+            ticket += self.centrar(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ancho_ticket) + "\n\n"
+            ticket += f"{'Producto':<12}{'Cant':>5}{'Precio':>8}\n"
+            ticket += "-" * ancho_ticket + "\n"
+
+            # --- BLOQUE PARA PROMO ---
+            if getattr(self, "promocion_frappes_activa", False):
+                # Junta todos los frappes seleccionados
+                frappes = []
+                otros_productos = []
+                for producto, cantidad_var in self.entradas_productos.items():
+                    cantidad = cantidad_var.get()
+                    if cantidad > 0:
+                        if "frappe" in producto.lower():
+                            frappes.extend([producto] * cantidad)
+                        else:
+                            otros_productos.append((producto, cantidad))
+                pares = len(frappes) // 2
+                restantes = len(frappes) % 2
+
+                # Frappes en promo
+                for i in range(pares * 2):
+                    frappe_nombre = frappes[i]
+                    ticket += f"{frappe_nombre[:12]:<12}{1:>5}{'PROMO':>8}\n"
+                    total += 50
+
+                # Frappes restantes a precio normal
+                for i in range(pares * 2, len(frappes)):
+                    frappe_nombre = frappes[i]
+                    precio_normal = float(productos[productos["Producto"] == frappe_nombre]["Precio"])
+                    ticket += f"{frappe_nombre[:12]:<12}{1:>5}{precio_normal:>8.2f}\n"
+                    total += precio_normal
+
+                # Otros productos
+                for producto, cantidad in otros_productos:
+                    precio = float(productos[productos["Producto"] == producto]["Precio"])
+                    ticket += f"{producto[:12]:<12}{cantidad:>5}{precio:>8.2f}\n"
+                    total += cantidad * precio
+            else:
+                for producto, cantidad_var in self.entradas_productos.items():
+                    cantidad = cantidad_var.get()
+                    if cantidad > 0:
+                        fila = productos[productos["Producto"] == producto]
+                        if not fila.empty:
+                            fila = fila.iloc[0]
+                            precio = fila["Precio"] if "Precio" in fila and pd.notna(fila["Precio"]) else 0
+                            ticket += f"{producto[:12]:<12}{cantidad:>5}{precio:>8.2f}\n"
+                            total += cantidad * precio
+
+            ticket += "-" * ancho_ticket + "\n"
+            ticket += self.centrar(f"TOTAL: ${total:.2f}", ancho_ticket) + "\n"
+            ticket += self.centrar(f"Método de Pago: {self.metodo_pago.get()}", ancho_ticket) + "\n"
+
+            # Mostrar cambio solo si es efectivo
+            cambio = 0
+            if self.metodo_pago.get() == "Efectivo":
+                try:
+                    billete = float(self.billete_recibido_var.get())
+                    cambio = billete - total
+                    if cambio < 0:
+                        self.cambio_var.set("Cambio: $0.00")
+                        ticket += self.centrar("Recibido: $0.00", ancho_ticket) + "\n"
+                        ticket += self.centrar("Cambio: $0.00", ancho_ticket) + "\n"
+                    else:
+                        self.cambio_var.set(f"Cambio: ${cambio:.2f}")
+                        ticket += self.centrar(f"Recibido: ${billete:.2f}", ancho_ticket) + "\n\n"
+                        ticket += self.centrar(f"Cambio: ${cambio:.2f}", ancho_ticket) + "\n"
+                except ValueError:
+                    self.cambio_var.set("Cambio: $0.00")
+                    ticket += self.centrar("Recibido: $0.00", ancho_ticket) + "\n"
+                    ticket += self.centrar("Cambio: $0.00", ancho_ticket) + "\n"
+            else:
+                self.cambio_var.set("Cambio: $0.00")
+
+            ticket += "-" * ancho_ticket + "\n\n"
+            ticket += self.centrar("¡Gracias por su compra!", ancho_ticket) + "\n"
+
+            self.ticket_texto.delete("1.0", tk.END)
+            self.ticket_texto.insert(tk.END, ticket)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error en previsualizar_ticket:\n{e}")
+            logging.error(f"Error en previsualizar_ticket: {e}")
+
+    def centrar(self, texto, ancho=32):
+        return texto.center(ancho)
+
+    # Generar Ticket
+    def generar_ticket(self):
+        productos = cargar_inventario()
+        total = 0
+        ancho_ticket = 32
+        ticket = self.centrar("Caffè & Miga", ancho_ticket) + "\n"
+        ticket += self.centrar("--- TICKET DE COMPRA ---", ancho_ticket) + "\n"
+        ticket += self.centrar(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ancho_ticket) + "\n\n"
+        ticket += f"{'Producto':<12}{'Cant':>5}{'Precio':>8}\n"
+        ticket += "-" * ancho_ticket + "\n"
+
+        filas_actualizar = []
+        for producto, cantidad_var in self.entradas_productos.items():
+            cantidad = cantidad_var.get()
+            if cantidad > 0:
+                fila = productos[productos["Producto"] == producto].iloc[0]
+                tipo_unidad = fila["TipoUnidad"] if "TipoUnidad" in fila else "Unidad"
+                if tipo_unidad == "Unidad" and fila["Unidades"] < cantidad:
+                    messagebox.showerror("Stock insuficiente", f"No hay suficientes unidades de {producto}")
+                    return
+                subtotal = cantidad * fila["Precio"]
+                ticket += f"{producto[:12]:<12}{cantidad:>5}{fila['Precio']:>8.2f}\n"
+                total += subtotal
+                filas_actualizar.append((producto, cantidad))
+
+        if total == 0:
+            messagebox.showwarning("Vacío", "No se seleccionó ningún producto.")
+            return
+
+        ticket += "-" * ancho_ticket + "\n"
+        ticket += self.centrar(f"TOTAL: ${total:.2f}", ancho_ticket) + "\n"
+        ticket += self.centrar(f"Método de Pago: {self.metodo_pago.get()}", ancho_ticket) + "\n"
+
+        cambio = 0
+        if self.metodo_pago.get() == "Efectivo":
+            try:
+                billete = float(self.billete_recibido_var.get())
+                cambio = billete - total
+                if cambio < 0:
+                    ticket += self.centrar("Recibido: $0.00", ancho_ticket) + "\n"
+                    ticket += self.centrar("Cambio: $0.00", ancho_ticket) + "\n"
+                    messagebox.showwarning("Pago insuficiente", "El billete recibido es menor al total.")
+                    return
+            except ValueError:
+                messagebox.showwarning("Pago inválido", "Ingrese un billete válido.")
+                return
+
+        ticket += "-" * ancho_ticket + "\n\n"
+        ticket += self.centrar("¡Gracias por su compra!", ancho_ticket) + "\n"
+
+        self.ticket_texto.delete("1.0", tk.END)
+        self.ticket_texto.insert(tk.END, ticket)
+
+        # --- GUARDAR EN BASE DE DATOS ---
+        fecha_venta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if self.promocion_frappes_activa:
+            from collections import Counter
+            frappes = []
+            otros_productos = []
+            for producto, cantidad in filas_actualizar:
+                if "frappe" in producto.lower():
+                    frappes.extend([producto] * cantidad)
+                else:
+                    otros_productos.append((producto, cantidad))
+            pares = len(frappes) // 2
+            restantes = len(frappes) % 2
+
+            # Agrupa frappes en promo
+            frappe_counter = Counter(frappes[:pares * 2])
+            for frappe_nombre, cantidad in frappe_counter.items():
+                guardar_ticket_sqlite(fecha_venta, frappe_nombre, cantidad, 50, self.metodo_pago.get())
+
+            # Frappes restantes a precio normal
+            for frappe_nombre in frappes[pares * 2:]:
+                precio_normal = float(productos[productos["Producto"] == frappe_nombre]["Precio"])
+                guardar_ticket_sqlite(fecha_venta, frappe_nombre, 1, precio_normal, self.metodo_pago.get())
+
+            # Otros productos
+            for producto, cantidad in otros_productos:
+                precio = float(productos[productos["Producto"] == producto]["Precio"])
+                guardar_ticket_sqlite(fecha_venta, producto, cantidad, precio, self.metodo_pago.get())
+        else:
+            for producto, cantidad in filas_actualizar:
+                precio = float(productos[productos["Producto"] == producto]["Precio"])
+                guardar_ticket_sqlite(fecha_venta, producto, cantidad, precio, self.metodo_pago.get())
+
+        guardar_inventario(productos)
+
+        # Guardar el ticket en PDF (igual que antes)
+        try:
+            if not os.path.exists("tickets"):
+                os.makedirs("tickets")
+            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
+            nombre_pdf = f"tickets/ticket_{fecha_actual}.pdf"
+            c = canvas.Canvas(nombre_pdf, pagesize=letter)
+            c.setFont("Courier", 10)
+            for i, line in enumerate(ticket.split("\n")):
+                c.drawString(50, 750 - (15 * i), line)
+            c.save()
+        except Exception as e:
+            messagebox.showwarning("Error al guardar PDF", f"No se pudo crear el archivo PDF:\n{e}")
+
+        # Imprimir SOLO en POS-58, usando Arial y centrado real
+        try:
+            printer_name = "POS-58"
+            impresoras = [p[2] for p in win32print.EnumPrinters(2)]
+            print("Impresoras detectadas:", impresoras)  # Para depuración
+            printer_real = None
+            for nombre in impresoras:
+                if nombre.strip().lower() == printer_name.strip().lower():
+                    printer_real = nombre
+                    break
+            if not printer_real:
+                messagebox.showwarning("Impresora no encontrada", f"La impresora '{printer_name}' no está instalada o conectada.\nDetectadas: {impresoras}")
+                logging.error(f"Impresora '{printer_name}' no encontrada. Detectadas: {impresoras}")
+                return
+
+            hprinter = win32print.OpenPrinter(printer_real)
+            pdc = win32ui.CreateDC()
+            pdc.CreatePrinterDC(printer_real)
+            pdc.StartDoc("Ticket")
+            pdc.StartPage()
+
+            # Medidas para papel 58mm: ancho ~220 px
+            ancho_px = 220
+            margen_izq = 40  # Aproximadamente 2 cm en papel de 58mm
+            y = 10
+
+            # Espacio vertical de medio centímetro ≈ 19 px (a 96 dpi)
+            espacio_linea = 19
+            espacio_parrafo = 32  # Espacio extra para separar secciones
+
+            # Logo (más grande y centrado respecto al margen)
+            font_logo = win32ui.CreateFont({
+                "name": "Arial",
+                "height": 36,
+                "weight": 700,
+            })
+            pdc.SelectObject(font_logo)
+            texto_logo = "Caffè & Miga"
+            x_logo = margen_izq
+            pdc.TextOut(x_logo, y, texto_logo)
+            y += 40 + espacio_parrafo
+
+            # Título (más grande y centrado respecto al margen)
+            font_titulo = win32ui.CreateFont({
+                "name": "Arial",
+                "height": 28,
+                "weight": 700,
+            })
+            pdc.SelectObject(font_titulo)
+            texto_titulo = "TICKET DE COMPRA"
+            x_titulo = margen_izq
+            pdc.TextOut(x_titulo, y, texto_titulo)
+            y += 32 + espacio_parrafo
+
+            # Fuente para datos
+            font_datos = win32ui.CreateFont({
+                "name": "Arial",
+                "height": 28,
+                "weight": 400,
+            })
+            pdc.SelectObject(font_datos)
+
+            # Fecha (alineado al margen)
+            texto_fecha = f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            x_fecha = margen_izq
+            pdc.TextOut(x_fecha, y, texto_fecha)
+            y += espacio_linea + espacio_parrafo
+
+            # Línea separadora
+            pdc.TextOut(margen_izq, y, "-" * 24)
+            y += espacio_linea
+
+            # Encabezado productos
+            encabezado = f"{'Producto':<10}{'Cant':>4}{'Precio':>7}"
+            pdc.TextOut(margen_izq, y, encabezado)
+            y += espacio_linea + espacio_parrafo  # Espacio de párrafo después del encabezado
+
+            pdc.TextOut(margen_izq, y, "-" * 24)
+            y += espacio_linea
+
+            # Productos
+            for producto, cantidad_var in self.entradas_productos.items():
+                cantidad = cantidad_var.get()
+                if cantidad > 0:
+                    fila = productos[productos["Producto"] == producto].iloc[0]
+                    texto_prod = f"{producto[:10]:<10}{cantidad:>4}{fila['Precio']:>7.2f}"
+                    pdc.TextOut(margen_izq, y, texto_prod)
+                    y += espacio_linea + espacio_parrafo  # Espacio de párrafo después de cada producto
+
+            # Línea separadora
+            pdc.TextOut(margen_izq, y, "-" * 24)
+            y += espacio_linea + espacio_parrafo
+
+            # Total (centrado y más grande)
+            font_total = win32ui.CreateFont({
+                "name": "Arial",
+                "height": 28,
+                "weight": 700,
+            })
+            pdc.SelectObject(font_total)
+            texto_total = f"TOTAL: ${total:.2f}"
+            pdc.TextOut(margen_izq, y, texto_total)
+            y += espacio_linea + espacio_parrafo
+
+            # Método de pago (alineado al margen)
+            pdc.SelectObject(font_datos)
+            texto_pago = f"Método de Pago: {self.metodo_pago.get()}"
+            pdc.TextOut(margen_izq, y, texto_pago)
+            y += espacio_linea + espacio_parrafo
+
+            # NUEVO: Imprimir recibido y cambio si es efectivo
+            if self.metodo_pago.get() == "Efectivo":
+                try:
+                    billete = float(self.billete_recibido_var.get())
+                    cambio = billete - total
+                    texto_recibido = f"Recibido: ${billete:.2f}"
+                    texto_cambio = f"Cambio: ${cambio:.2f}" if cambio >= 0 else "Cambio: $0.00"
+                except Exception:
+                    texto_recibido = "Recibido: $0.00"
+                    texto_cambio = "Cambio: $0.00"
+                pdc.TextOut(margen_izq, y, texto_recibido)
+                y += espacio_linea + espacio_parrafo  # Añade el espacio de párrafo aquí
+                pdc.TextOut(margen_izq, y, texto_cambio)
+                y += espacio_linea + espacio_parrafo
+
+            # Línea separadora
+            pdc.TextOut(margen_izq, y, "-" * 24)
+            y += espacio_linea + espacio_parrafo
+
+            # Mensaje final (centrado y más grande)
+            font_gracias = win32ui.CreateFont({
+                "name": "Arial",
+                "height": 22,
+                "weight": 700,
+            })
+            pdc.SelectObject(font_gracias)
+            mensaje = "¡Gracias por su compra!"
+            pdc.TextOut(margen_izq, y, mensaje)
+            y += espacio_linea
+
+            pdc.EndPage()
+            pdc.EndDoc()
+            pdc.DeleteDC()
+        except Exception as e:
+            print("Error impresión física:", e)
+            messagebox.showwarning("Impresión fallida", f"No se pudo imprimir el ticket en '{printer_name}':\n{e}")
+            logging.error(f"Error impresión física: {e}")
+
+        self.alerta_bajo_inventario()
+        self.show_compra()
+
+    def show_historial(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#FFFFFF")
+        frame.pack(fill="both", expand=True)
+        self.frames["historial"] = frame
+
+        frame_canvas = tk.Frame(frame, bg="#FFFFFF")
+        frame_canvas.pack(fill="both", expand=True)
+        canvas = tk.Canvas(frame_canvas, bg="#FFFFFF", highlightthickness=0)
+        scrollbar = tk.Scrollbar(frame_canvas, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg="#FFFFFF")
+
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Filtros para el historial
+        filtro_frame = tk.Frame(scroll_frame, bg="#E8F8F5")
+        filtro_frame.pack(fill="x", pady=5)
+
+        tk.Label(filtro_frame, text="Fecha inicio (YYYY-MM-DD):", bg="#E8F8F5").pack(side="left")
+        entry_fecha_ini = tk.Entry(filtro_frame, width=12)
+        entry_fecha_ini.pack(side="left", padx=2)
+        tk.Label(filtro_frame, text="Fecha fin:", bg="#E8F8F5").pack(side="left")
+        entry_fecha_fin = tk.Entry(filtro_frame, width=12)
+        entry_fecha_fin.pack(side="left", padx=2)
+        tk.Label(filtro_frame, text="Producto:", bg="#E8F8F5").pack(side="left")
+        entry_producto = tk.Entry(filtro_frame, width=10)
+        entry_producto.pack(side="left", padx=2)
+        tk.Label(filtro_frame, text="Pago:", bg="#E8F8F5").pack(side="left")
+        entry_pago = tk.Entry(filtro_frame, width=8)
+        entry_pago.pack(side="left", padx=2)
+
+      
+        def aplicar_filtros():
+            # Leer los filtros
+            fecha_ini = entry_fecha_ini.get()
+            fecha_fin = entry_fecha_fin.get()
+            producto = entry_producto.get()
+            pago = entry_pago.get()
+
+            if not os.path.exists(ARCHIVO_TICKETS):
+                messagebox.showinfo("Sin datos", "No hay tickets registrados aún.")
+                return
+
+            df = pd.read_excel(ARCHIVO_TICKETS)
+            if fecha_ini:
+                try:
+                    df = df[df["Fecha"] >= fecha_ini]
+                except Exception:
+                    messagebox.showerror("Error", "Fecha inicio inválida.")
+                    return
+            if fecha_fin:
+                try:
+                    df = df[df["Fecha"] <= fecha_fin]
+                except Exception:
+                    messagebox.showerror("Error", "Fecha fin inválida.")
+                    return
+            if producto:
+                df = df[df["Producto"].str.contains(producto, case=False, na=False)]
+            if pago:
+                df = df[df["Pago"].str.contains(pago, case=False, na=False)]
+
+            # Limpiar los resultados anteriores
+            for widget in scroll_frame.winfo_children():
+                if isinstance(widget, tk.Label) or isinstance(widget, tk.Button):
+                    widget.destroy()
+
+            # Mostrar los resultados filtrados
+            if df.empty:
+                tk.Label(scroll_frame, text="No se encontraron tickets con los filtros seleccionados.", font=("Arial", 14)).pack(pady=20)
+            else:
+                tickets = df.groupby([df["Fecha"].astype(str), "Pago"])
+                for i, ((fecha_str, pago), group) in enumerate(tickets):
+                    estado = group.iloc[0].get("Estado", "Activo")
+                    motivo = group.iloc[0].get("MotivoCancelacion", "")
+                    productos = ", ".join([f"{row['Producto']} x{row['Cantidad']}" for idx, row in group.iterrows()])
+                    linea = f"{group.iloc[0]['Fecha']} - {productos} - ${group['Precio'].sum():.2f} - {pago} - {estado}"
+                    if estado == "Cancelado":
+                        linea += f" (Motivo: {motivo})"
+                    tk.Label(scroll_frame, text=linea, anchor="w", font=("Courier", 10), bg="#F2F4F5").pack(fill="x", padx=5, pady=2)
+
+                    nombre_pdf = os.path.abspath(f"tickets/ticket_{fecha_str.replace(':','').replace(' ','_').replace('-','')}.pdf")
+                    def abrir_pdf(ruta=nombre_pdf):
+                        try:
+                            if os.path.exists(ruta):
+                                os.startfile(ruta)
+                            else:
+                                messagebox.showwarning("PDF no encontrado", f"No se encontró el PDF:\n{ruta}")
+                        except Exception as e:
+                            messagebox.showerror("Error al abrir PDF", f"No se pudo abrir el PDF:\n{e}")
+
+                    tk.Button(scroll_frame, text="Abrir PDF", command=abrir_pdf, font=("Arial", 9), bg="#D5F5E3").pack(anchor="w", padx=20, pady=1)
+
+                    # Botón cancelar solo si está activo
+                    if estado == "Activo":
+                        def cancelar_ticket(fecha=group.iloc[0]['Fecha']):
+                            motivo = simpledialog.askstring("Cancelar ticket", "Motivo de cancelación:")
+                            if motivo:
+                                df2 = pd.read_excel(ARCHIVO_TICKETS)
+                                df2.loc[df2["Fecha"] == fecha, "Estado"] = "Cancelado"
+                                df2.loc[df2["Fecha"] == fecha, "MotivoCancelacion"] = motivo
+                                df2.to_excel(ARCHIVO_TICKETS, index=False)
+                                messagebox.showinfo("Cancelado", "Ticket cancelado correctamente.")
+                                self.show_historial()
+                        tk.Button(scroll_frame, text="Cancelar", command=cancelar_ticket, font=("Arial", 9), bg="#F5B7B1").pack(anchor="w", padx=20, pady=1)
+
+        tk.Button(filtro_frame, text="Buscar", command=aplicar_filtros, bg="#85C1E9").pack(side="left", padx=5)
+
+        def exportar_tickets():
+            df = pd.read_excel(ARCHIVO_TICKETS)
+            if entry_fecha_ini.get():
+                df = df[df["Fecha"] >= entry_fecha_ini.get()]
+            if entry_fecha_fin.get():
+                df = df[df["Fecha"] <= entry_fecha_fin.get()]
+            archivo = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+            if archivo:
+                df.to_excel(archivo, index=False)
+                messagebox.showinfo("Exportado", "Tickets exportados correctamente.")
+
+        tk.Button(filtro_frame, text="Exportar", command=exportar_tickets, bg="#58D68D").pack(side="left", padx=5)
+
+        if not os.path.exists(ARCHIVO_TICKETS):
+            tk.Label(scroll_frame, text="No hay tickets registrados aún.", font=("Arial", 14)).pack(pady=20)
+        else:
+            df = pd.read_excel(ARCHIVO_TICKETS)
+            df["Fecha"] = pd.to_datetime(df["Fecha"])
+            tickets = df.groupby([df["Fecha"].dt.strftime("%Y%m%d_%H%M%S"), "Pago"])
+            for i, ((fecha_str, pago), group) in enumerate(tickets):
+                estado = group.iloc[0].get("Estado", "Activo")
+                motivo = group.iloc[0].get("MotivoCancelacion", "")
+                productos = ", ".join([f"{row['Producto']} x{row['Cantidad']}" for idx, row in group.iterrows()])
+                linea = f"{group.iloc[0]['Fecha']} - {productos} - ${group['Precio'].sum():.2f} - {pago} - {estado}"
+                if estado == "Cancelado":
+                    linea += f" (Motivo: {motivo})"
+                tk.Label(scroll_frame, text=linea, anchor="w", font=("Courier", 10), bg="#F2F4F5").pack(fill="x", padx=5, pady=2)
+
+                nombre_pdf = os.path.abspath(f"tickets/ticket_{fecha_str}.pdf")
+                def abrir_pdf(ruta=nombre_pdf):
+                    try:
+                        if os.path.exists(ruta):
+                            os.startfile(ruta)
+                        else:
+                            messagebox.showwarning("PDF no encontrado", f"No se encontró el PDF:\n{ruta}")
+                    except Exception as e:
+                        messagebox.showerror("Error al abrir PDF", f"No se pudo abrir el PDF:\n{e}")
+
+                tk.Button(scroll_frame, text="Abrir PDF", command=abrir_pdf, font=("Arial", 9), bg="#D5F5E3").pack(anchor="w", padx=20, pady=1)
+
+                # Botón cancelar solo si está activo
+                if estado == "Activo":
+                    def cancelar_ticket(fecha=group.iloc[0]['Fecha']):
+                        motivo = simpledialog.askstring("Cancelar ticket", "Motivo de cancelación:")
+                        if motivo:
+                            df = pd.read_excel(ARCHIVO_TICKETS)
+                            df.loc[df["Fecha"] == fecha, "Estado"] = "Cancelado"
+                            df.loc[df["Fecha"] == fecha, "MotivoCancelacion"] = motivo
+                            df.to_excel(ARCHIVO_TICKETS, index=False)
+                            messagebox.showinfo("Cancelado", "Ticket cancelado correctamente.")
+                            self.show_historial()
+                    tk.Button(scroll_frame, text="Cancelar", command=cancelar_ticket, font=("Arial", 9), bg="#F5B7B1").pack(anchor="w", padx=20, pady=1)
+
+        tk.Button(frame, text="Volver al Menú", command=self.show_menu,
+                  bg="#3498DB", fg="white", font=("Arial", 12)).pack(pady=10)
+
+    def show_ventas(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#FFFFFF")
+        frame.pack(fill="both", expand=True)
+        self.frames["ventas"] = frame
+
+        df = obtener_ventas()
+        if df.empty:
+            tk.Label(frame, text="No hay ventas registradas aún.", font=("Arial", 14), bg="#FFFFFF").pack(pady=20)
+        else:
+            df["fecha"] = pd.to_datetime(df["fecha"])
+            hoy = pd.Timestamp.now().normalize()
+            semana = hoy - pd.Timedelta(days=hoy.weekday())
+            mes = hoy.replace(day=1)
+
+            ventas_dia = df[df["fecha"].dt.normalize() == hoy]
+            ventas_semana = df[df["fecha"].dt.normalize() >= semana]
+            ventas_mes = df[df["fecha"].dt.normalize() >= mes]
+
+            def resumen_ventas(df_ventas, titulo):
+                df_ventas = df_ventas[df_ventas["estado"] == "Activo"]
+                total = (df_ventas["precio"] * df_ventas["cantidad"]).sum()
+                productos = df_ventas.groupby("producto")["cantidad"].sum()
+                resumen = f"{titulo}\nTotal: ${total:.2f}\nProductos vendidos:\n"
+                for prod, cant in productos.items():
+                    resumen += f"  {prod}: {cant}\n"
+                return resumen + "\n"
+
+            # --- Cuadro de texto con scrollbar ---
+            texto_frame = tk.Frame(frame, bg="#F2F4F5")
+            texto_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+            texto = tk.Text(texto_frame, font=("Courier", 12), bg="#F2F4F5", wrap="none", height=30)
+            texto.pack(side="left", fill="both", expand=True)
+
+            scrollbar_texto = tk.Scrollbar(texto_frame, orient="vertical", command=texto.yview)
+            scrollbar_texto.pack(side="right", fill="y")
+            texto.configure(yscrollcommand=scrollbar_texto.set)
+
+            # Resúmenes con separación visual
+            texto.insert(tk.END, resumen_ventas(ventas_dia, "Ventas del Día"))
+            texto.insert(tk.END, "-"*40 + "\n")
+            texto.insert(tk.END, resumen_ventas(ventas_semana, "Ventas de la Semana"))
+            texto.insert(tk.END, "-"*40 + "\n")
+            mes_actual = datetime.now().strftime("%B %Y").capitalize()
+            texto.insert(tk.END, resumen_ventas(ventas_mes, f"Ventas del Mes ({mes_actual})"))
+
+        tk.Button(frame, text="Volver al Menú", command=self.show_menu,
+                  bg="#3498DB", fg="white", font=("Arial", 12)).pack(pady=10)
+
+    def show_ventas_db(self):
+        self.clear_frames()
+        frame = tk.Frame(self, bg="#FFFFFF")
+        frame.pack(fill="both", expand=True)
+        self.frames["ventas_db"] = frame
+
+        df = obtener_ventas()
+        df = df[df["estado"] == "Activo"]
+
+        if df.empty:
+            tk.Label(frame, text="No hay ventas registradas aún.", font=("Arial", 14), bg="#FFFFFF").pack(pady=20)
+            tk.Button(frame, text="Volver al Menú", command=self.show_menu,
+                      bg="#3498DB", fg="white", font=("Arial", 12)).pack(pady=10)
+            return
+
+        columns = list(df.columns)
+        tree = ttk.Treeview(frame, columns=columns, show="headings", height=25)
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=120, anchor="center")
+        for _, row in df.iterrows():
+            tree.insert("", "end", values=[row[col] for col in columns])
+        tree.pack(fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+
+        tk.Button(frame, text="Volver al Menú", command=self.show_menu,
+                  bg="#3498DB", fg="white", font=("Arial", 12)).pack(pady=10)
+
+    def respaldar_db(self):
+        origen = "ventas.db"
+        destino = os.path.join("backups", f"ventas_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+        if not os.path.exists("backups"):
+            os.makedirs("backups")
+        shutil.copy(origen, destino)
+        messagebox.showinfo("Respaldo", f"Respaldo guardado en {destino}")
+
+def extraer_datos_ticket(pdf_path):
+    with pdfplumber.open(pdf_path) as pdf:
+        texto = ""
+        for page in pdf.pages:
+            texto += page.extract_text() + "\n"
+
+    # Busca la fecha
+    fecha = None
+    for linea in texto.splitlines():
+        if "Fecha:" in linea:
+            fecha_txt = linea.split("Fecha:")[1].strip()
+            try:
+                fecha = datetime.strptime(fecha_txt, "%d/%m/%Y %H:%M")
+            except Exception:
+                fecha = None
+            break
+
+    # Busca método de pago
+    metodo_pago = "Efectivo" if "Efectivo" in texto else "Tarjeta"
+
+    # Busca productos
+    productos = []
+    captura = False
+    for linea in texto.splitlines():
+        if "Producto" in linea and "Cant" in linea and "Precio" in linea:
+            captura = True
+            continue
+        if captura:
+            if "TOTAL:" in linea or "Método de Pago" in linea or "---" in linea:
+                break
+            if linea.strip() == "":
+                continue
+            partes = linea.strip().split()
+            if len(partes) >= 4:
+                nombre = " ".join(partes[:-3])
+                cantidad = partes[-3]
+                precio = partes[-2].replace("$", "").replace(",", "")
+                # subtotal = partes[-1]  # No lo usamos
+                try:
+                    cantidad = int(cantidad)
+                    precio = float(precio)
+                    productos.append((nombre, cantidad, precio))
+                except Exception:
+                    continue
+
+    return fecha, metodo_pago, productos
+
+def agregar_a_excel(datos):
+    if os.path.exists(ARCHIVO_EXCEL):
+        df = pd.read_excel(ARCHIVO_EXCEL)
+    else:
+        df = pd.DataFrame(columns=["Fecha", "Producto", "Cantidad", "Precio", "Pago", "Estado", "MotivoCancelacion"])
+
+    for fecha, metodo_pago, productos in datos:
+        for nombre, cantidad, precio in productos:
+            df.loc[len(df)] = [fecha, nombre, cantidad, precio, metodo_pago, "Activo", ""]
+    df.to_excel(ARCHIVO_EXCEL, index=False)
+    print("¡Tickets agregados al Excel!")
+
+def guardar_ticket_sqlite(fecha, producto, cantidad, precio, pago, estado="Activo", motivo_cancelacion=""):
+    conn = sqlite3.connect('ventas.db')
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO tickets (fecha, producto, cantidad, precio, pago, estado, motivo_cancelacion)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (fecha, producto, cantidad, precio, pago, estado, motivo_cancelacion))
+    conn.commit()
+    conn.close()
+
+def main():
+    CARPETA_PDFS = "tickets"  # Define aquí la carpeta donde están los PDFs
+    datos = []
+    for archivo in os.listdir(CARPETA_PDFS):
+        if archivo.lower().endswith(".pdf"):
+            ruta = os.path.join(CARPETA_PDFS, archivo)
+            print(f"Procesando: {archivo}")
+            fecha, metodo_pago, productos = extraer_datos_ticket(ruta)
+            if fecha and productos:
+                datos.append((fecha, metodo_pago, productos))
+            else:
+                print(f"No se pudo extraer datos de {archivo}")
+    agregar_a_excel(datos)
+
+if __name__ == "__main__":
+    try:
+        app = AppCafeteria()
+        app.mainloop()
+    except Exception as e:
+        logging.critical(f"Error crítico al iniciar la aplicación: {e}")
+        messagebox.showerror("Error crítico", f"No se pudo iniciar la aplicación:\n{e}")
+    # main()  # Descomenta esto si quieres ejecutar la importación de tickets al iniciar

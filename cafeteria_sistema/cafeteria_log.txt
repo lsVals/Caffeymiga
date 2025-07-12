@@ -1,0 +1,9 @@
+18 bisquetes, 52025-07-08 17:55:38,404 ERROR:Error en previsualizar_ticket: '_tkinter.tkapp' object has no attribute 'centrar'
+2025-07-08 18:08:52,160 ERROR:Error en previsualizar_ticket: '_tkinter.tkapp' object has no attribute 'centrar'
+2025-07-08 18:08:57,003 ERROR:Error en previsualizar_ticket: '_tkinter.tkapp' object has no attribute 'centrar'
+2025-07-08 18:09:13,977 ERROR:Error en previsualizar_ticket: '_tkinter.tkapp' object has no attribute 'centrar'
+2025-07-08 18:13:45,605 ERROR:Error en previsualizar_ticket: '_tkinter.tkapp' object has no attribute 'centrar'
+2025-07-12 03:02:51,147 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
+2025-07-12 03:03:57,123 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
+2025-07-12 03:06:32,271 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
+2025-07-12 03:06:48,295 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?

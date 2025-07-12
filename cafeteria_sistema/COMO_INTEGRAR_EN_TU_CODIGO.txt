@@ -1,0 +1,31 @@
+
+# EJEMPLO: Cómo agregar a tu código principal existente
+
+# Al inicio de tu archivo principal:
+from caffe_miga_auto_integration import inicializar_caffe_miga, sincronizar_pedidos_web, iniciar_monitoreo_web
+
+# En tu función main() o __init__():
+def inicializar_sistema():
+    # Tu código existente...
+    inicializar_ventana()
+    conectar_base_datos()
+    
+    # AGREGAR ESTA LÍNEA:
+    inicializar_caffe_miga()  # ← Inicializar integración web
+    
+    # OPCIONAL: Iniciar monitoreo automático
+    iniciar_monitoreo_web()  # ← Los pedidos llegan automáticamente cada 30 seg
+
+# Si tienes un botón "Actualizar" o similar:
+def actualizar_datos():
+    # Tu código existente...
+    cargar_pedidos()
+    actualizar_interfaz()
+    
+    # AGREGAR ESTA LÍNEA:
+    sincronizar_pedidos_web()  # ← Sincronizar pedidos web manualmente
+
+# Si tienes un menú, agregar opción:
+def crear_menu():
+    # Tu menú existente...
+    menu.add_command(label="Sincronizar Web", command=sincronizar_pedidos_web)
