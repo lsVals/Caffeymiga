@@ -625,6 +625,22 @@ def test_pos_connection():
             "error": str(e)
         }), 500
 
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    """Endpoint de prueba simple"""
+    return jsonify({"message": "Servidor funcionando", "timestamp": datetime.now().isoformat()})
+
+@app.route('/test/firebase', methods=['GET'])
+def test_firebase():
+    """Probar solo Firebase"""
+    try:
+        if firebase_manager.db:
+            return jsonify({"firebase": "OK", "status": "connected"})
+        else:
+            return jsonify({"firebase": "ERROR", "status": "not_initialized"}), 500
+    except Exception as e:
+        return jsonify({"firebase": "ERROR", "error": str(e)}), 500
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "Endpoint no encontrado"}), 404
@@ -702,6 +718,39 @@ def save_order_to_sqlite(order_data):
     except Exception as e:
         logger.error(f"❌ Error guardando en SQLite: {e}")
         return False
+
+@app.route('/pos/orders/simple', methods=['POST'])
+def pos_orders_simple():
+    """Endpoint simplificado para crear pedidos sin Firebase"""
+    try:
+        data = request.get_json()
+        logger.info(f"📦 Procesando pedido simple: {data.get('payer', {}).get('name', 'Sin nombre')}")
+        
+        # Validar datos requeridos
+        if not data.get('items') or len(data['items']) == 0:
+            return jsonify({"error": "No se encontraron items en el pedido"}), 400
+        
+        # Calcular total
+        total = sum(item.get('price', 0) * item.get('quantity', 1) for item in data['items'])
+        
+        # Crear ID único para el pedido
+        order_id = f"simple_{int(datetime.now().timestamp())}"
+        
+        logger.info(f"✅ Pedido simple procesado: {order_id} - Total: ${total}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Pedido procesado correctamente (modo simple)",
+            "order_id": order_id,
+            "total": total,
+            "payment_method": data.get('payment_method', 'efectivo'),
+            "customer_name": data.get('payer', {}).get('name', ''),
+            "pickup_time": data.get('metadata', {}).get('pickup_time', '')
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando pedido simple: {str(e)}")
+        return jsonify({"error": f"Error al procesar el pedido: {str(e)}"}), 500
 
 if __name__ == '__main__':
     print("\n" + "="*50)
