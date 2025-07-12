@@ -147,7 +147,7 @@ def create_preference():
             processed_item = {
                 "id": item.get('id', 'item'),
                 "title": item.get('title', 'Producto'),
-                "currency_id": "MXN",  # Moneda de México
+                "currency_id": "MXN",  # Moneda de México (Peso mexicano)
                 "picture_url": item.get('picture_url', ''),
                 "description": item.get('description', ''),
                 "category_id": item.get('category_id', 'food'),
@@ -168,14 +168,14 @@ def create_preference():
                 "surname": "",
                 "email": data.get('payer', {}).get('email', ''),
                 "phone": {
-                    "area_code": data.get('payer', {}).get('phone', {}).get('area_code', '502'),
+                    "area_code": data.get('payer', {}).get('phone', {}).get('area_code', '52'),
                     "number": data.get('payer', {}).get('phone', {}).get('number', '')
                 }
             },
             "back_urls": {
-                "success": "http://localhost:8000/success.html",
-                "failure": "http://localhost:8000/failure.html",
-                "pending": "http://localhost:8000/pending.html"
+                "success": "https://lsvals.github.io/caffeymiga/success.html",
+                "failure": "https://lsvals.github.io/caffeymiga/failure.html",
+                "pending": "https://lsvals.github.io/caffeymiga/pending.html"
             },
             "payment_methods": {
                 "excluded_payment_methods": [],
@@ -809,6 +809,64 @@ def pos_orders_basic():
     except Exception as e:
         logger.error(f"❌ Error procesando pedido básico: {str(e)}")
         return jsonify({"error": f"Error al procesar el pedido: {str(e)}"}), 500
+
+@app.route('/test/mercadopago', methods=['GET', 'POST'])
+def test_mercadopago():
+    """Endpoint de prueba para verificar Mercado Pago"""
+    try:
+        if not sdk:
+            return jsonify({
+                "status": "error",
+                "message": "SDK de Mercado Pago no inicializado",
+                "access_token_configured": bool(ACCESS_TOKEN),
+                "test_mode": USE_TEST_MODE
+            }), 500
+        
+        # Crear una preferencia de prueba simple
+        test_preference = {
+            "items": [
+                {
+                    "id": "test_item",
+                    "title": "Producto de Prueba",
+                    "currency_id": "MXN",  # Moneda de México
+                    "quantity": 1,
+                    "unit_price": 50.0
+                }
+            ],
+            "payer": {
+                "name": "Cliente de Prueba",
+                "surname": "",
+                "email": "test@caffeymiga.com"
+            },
+            "back_urls": {
+                "success": "http://localhost:3000/success.html",
+                "failure": "http://localhost:3000/failure.html",
+                "pending": "http://localhost:3000/pending.html"
+            },
+            "external_reference": f"test_{int(datetime.now().timestamp())}"
+        }
+        
+        # Intentar crear preferencia
+        response = sdk.preference().create(test_preference)
+        
+        return jsonify({
+            "status": "success",
+            "sdk_status": "connected",
+            "test_mode": USE_TEST_MODE,
+            "response_status": response.get("status"),
+            "preference_created": response.get("status") == 201,
+            "preference_id": response.get("response", {}).get("id") if response.get("status") == 201 else None,
+            "error": response if response.get("status") != 201 else None
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error en test Mercado Pago: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "sdk_initialized": bool(sdk),
+            "access_token_configured": bool(ACCESS_TOKEN)
+        }), 500
 
 if __name__ == '__main__':
     print("\n" + "="*50)

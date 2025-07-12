@@ -1537,7 +1537,7 @@ async function crearPreferenciaPago() {
             payer: {
                 name: nombre,
                 phone: {
-                    area_code: "502", // Código de área de Guatemala
+                    area_code: "52", // Código de área de México
                     number: telefono
                 },
                 email: `${telefono}@caffeymiga.com` // Email temporal basado en teléfono
@@ -1737,7 +1737,7 @@ async function procesarPedidoSistema(metodoPago) {
             payer: {
                 name: nombre,
                 phone: {
-                    area_code: "502",
+                    area_code: "52",
                     number: telefono
                 },
                 email: `${telefono}@caffeymiga.com`
