@@ -672,7 +672,7 @@ def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
         # En producción, guardar en un archivo temporal JSON
-        if os.getenv('ENVIRONMENT', 'development') == 'production':
+        if os.getenv('ENVIRONMENT', 'production') == 'production':
             logger.info("🌐 Entorno de producción - guardando en archivo temporal")
             
             # Crear directorio temporal si no existe
@@ -770,6 +770,39 @@ def pos_orders_simple():
         
     except Exception as e:
         logger.error(f"❌ Error procesando pedido simple: {str(e)}")
+        return jsonify({"error": f"Error al procesar el pedido: {str(e)}"}), 500
+
+@app.route('/pos/orders/basic', methods=['POST'])
+def pos_orders_basic():
+    """Endpoint básico para crear pedidos - solo respuesta exitosa"""
+    try:
+        data = request.get_json()
+        logger.info(f"📦 Procesando pedido básico: {data.get('payer', {}).get('name', 'Sin nombre')}")
+        
+        # Validar datos requeridos
+        if not data.get('items') or len(data['items']) == 0:
+            return jsonify({"error": "No se encontraron items en el pedido"}), 400
+        
+        # Calcular total
+        total = sum(item.get('price', 0) * item.get('quantity', 1) for item in data['items'])
+        
+        # Crear ID único para el pedido
+        order_id = f"basic_{int(datetime.now().timestamp())}"
+        
+        logger.info(f"✅ Pedido básico procesado: {order_id} - Total: ${total}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Pedido {data.get('payment_method')} procesado correctamente (modo básico)",
+            "order_id": order_id,
+            "total": total,
+            "payment_method": data.get('payment_method', 'efectivo'),
+            "customer_name": data.get('payer', {}).get('name', ''),
+            "pickup_time": data.get('metadata', {}).get('pickup_time', '')
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando pedido básico: {str(e)}")
         return jsonify({"error": f"Error al procesar el pedido: {str(e)}"}), 500
 
 if __name__ == '__main__':
