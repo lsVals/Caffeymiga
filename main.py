@@ -346,8 +346,12 @@ def pos_orders():
             if not data.get('items') or len(data['items']) == 0:
                 return jsonify({"error": "No se encontraron items en el pedido"}), 400
             
-            # Calcular total
-            total = sum(item.get('unit_price', 0) * item.get('quantity', 1) for item in data['items'])
+            # Calcular total - soportar tanto 'price' como 'unit_price'
+            total = 0
+            for item in data['items']:
+                price = item.get('unit_price', item.get('price', 0))
+                quantity = item.get('quantity', 1)
+                total += price * quantity
             
             # Crear ID único para el pedido
             order_id = f"efectivo_{int(datetime.now().timestamp())}"
@@ -671,8 +675,8 @@ def serve_images(filename):
 def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
-        # En producción, guardar en un archivo temporal JSON
-        if os.getenv('ENVIRONMENT', 'production') == 'production':
+        # En producción (Render), guardar en un archivo temporal JSON
+        if os.getenv('ENVIRONMENT') == 'production':
             logger.info("🌐 Entorno de producción - guardando en archivo temporal")
             
             # Crear directorio temporal si no existe
@@ -688,6 +692,7 @@ def save_order_to_sqlite(order_data):
             logger.info(f"✅ Pedido guardado en archivo temporal: {order_file}")
             return True
         
+        # En desarrollo local, usar SQLite
         db_path = "cafeteria_sistema/pos_pedidos.db"
         
         # Verificar si existe el directorio
