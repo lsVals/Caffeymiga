@@ -374,7 +374,7 @@ def pos_orders():
                 'source': 'web_cash_order'
             }
             
-            # Guardar en Firebase
+            # Intentar guardar en Firebase primero
             firebase_result = firebase_manager.save_order(order_data)
             
             if firebase_result:
@@ -397,7 +397,24 @@ def pos_orders():
                     "pickup_time": data.get('metadata', {}).get('pickup_time', '')
                 })
             else:
-                return jsonify({"error": "Error guardando el pedido"}), 500
+                # Si Firebase falla, intentar guardar solo localmente en SQLite
+                logger.warning(f"⚠️ Firebase falló para pedido {order_id}, intentando solo SQLite")
+                sqlite_result = save_order_to_sqlite(order_data)
+                
+                if sqlite_result:
+                    logger.info(f"✅ Pedido {order_id} guardado solo en SQLite (Firebase no disponible)")
+                    return jsonify({
+                        "success": True,
+                        "message": f"Pedido {data.get('payment_method')} procesado correctamente (solo local)",
+                        "order_id": order_id,
+                        "total": total,
+                        "payment_method": data.get('payment_method'),
+                        "customer_name": data.get('payer', {}).get('name', ''),
+                        "pickup_time": data.get('metadata', {}).get('pickup_time', ''),
+                        "warning": "Firebase no disponible - pedido guardado solo localmente"
+                    })
+                else:
+                    return jsonify({"error": "Error guardando el pedido en Firebase y SQLite"}), 500
                 
         except Exception as e:
             logger.error(f"❌ Error procesando pedido efectivo/terminal: {str(e)}")
@@ -654,9 +671,21 @@ def serve_images(filename):
 def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
-        # Solo intentar guardar en SQLite si estamos en desarrollo local
+        # En producción, guardar en un archivo temporal JSON
         if os.getenv('ENVIRONMENT', 'development') == 'production':
-            logger.info("🌐 Entorno de producción - saltando SQLite local")
+            logger.info("🌐 Entorno de producción - guardando en archivo temporal")
+            
+            # Crear directorio temporal si no existe
+            temp_dir = "temp_orders"
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
+            # Guardar en archivo JSON
+            order_file = os.path.join(temp_dir, f"order_{order_data['id']}.json")
+            with open(order_file, 'w', encoding='utf-8') as f:
+                json.dump(order_data, f, ensure_ascii=False, indent=2, default=str)
+            
+            logger.info(f"✅ Pedido guardado en archivo temporal: {order_file}")
             return True
         
         db_path = "cafeteria_sistema/pos_pedidos.db"
