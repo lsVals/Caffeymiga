@@ -1758,7 +1758,7 @@ async function procesarPedidoSistema(metodoPago) {
         showLoadingMessage('Procesando pedido...');
         
         // Enviar al backend - endpoint específico para pedidos del sistema
-        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/pos/orders/simple`, {
+        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/pos/orders`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
