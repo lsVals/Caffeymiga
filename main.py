@@ -71,6 +71,70 @@ def health_check():
         "mercadopago_status": "connected" if sdk else "error"
     })
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Endpoint de diagnóstico para verificar el estado del servidor"""
+    try:
+        # Verificar Firebase
+        firebase_status = "OK"
+        firebase_error = None
+        try:
+            if firebase_manager.db:
+                # Intentar una consulta simple
+                firebase_manager.db.collection('test').limit(1).get()
+                firebase_status = "Connected"
+            else:
+                firebase_status = "Not initialized"
+        except Exception as e:
+            firebase_status = "Error"
+            firebase_error = str(e)
+        
+        # Verificar Mercado Pago
+        mp_status = "OK" if sdk else "Not initialized"
+        
+        # Verificar SQLite (solo en desarrollo)
+        sqlite_status = "N/A (Production)"
+        if os.getenv('ENVIRONMENT', 'development') == 'development':
+            try:
+                db_path = "cafeteria_sistema/pos_pedidos.db"
+                if os.path.exists(db_path):
+                    import sqlite3
+                    conn = sqlite3.connect(db_path)
+                    conn.close()
+                    sqlite_status = "Connected"
+                else:
+                    sqlite_status = "Database not found"
+            except Exception as e:
+                sqlite_status = f"Error: {str(e)}"
+        
+        health_data = {
+            "status": "OK",
+            "timestamp": datetime.now().isoformat(),
+            "environment": os.getenv('ENVIRONMENT', 'development'),
+            "services": {
+                "firebase": {
+                    "status": firebase_status,
+                    "error": firebase_error
+                },
+                "mercado_pago": {
+                    "status": mp_status,
+                    "mode": "TEST" if USE_TEST_MODE else "PRODUCTION"
+                },
+                "sqlite": {
+                    "status": sqlite_status
+                }
+            }
+        }
+        
+        return jsonify(health_data)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "ERROR",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
 @app.route('/create_preference', methods=['POST'])
 def create_preference():
     """Crear preferencia de pago para Mercado Pago"""
