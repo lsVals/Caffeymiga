@@ -1,7 +1,7 @@
 # Servidor Backend para Caffe & Miga - Mercado Pago Integration
 # Python Flask Backend
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 import mercadopago
 import os
@@ -17,8 +17,8 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Crear aplicación Flask
-app = Flask(__name__)
+# Crear aplicación Flask con soporte para archivos estáticos
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Permitir requests desde el frontend
 
 # Configuración de Mercado Pago - Leer desde .env
@@ -55,6 +55,11 @@ PORT = int(os.getenv('PORT', 3000))
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 @app.route('/', methods=['GET'])
+def serve_index():
+    """Servir la página principal"""
+    return send_file('index.html')
+
+@app.route('/health', methods=['GET'])
 def health_check():
     """Verificar que el servidor esté funcionando"""
     return jsonify({
@@ -265,19 +270,63 @@ def get_payment_status(payment_id):
 
 # 🔥 ENDPOINTS PARA EL SISTEMA POS 🔥
 
-@app.route('/pos/orders', methods=['GET'])
-def get_pos_orders():
-    """Obtener pedidos pendientes para el POS"""
-    try:
-        orders = firebase_manager.get_pending_orders()
-        return jsonify({
-            "orders": orders,
-            "count": len(orders),
-            "status": "success"
-        })
-    except Exception as e:
-        logger.error(f"❌ Error obteniendo pedidos POS: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+@app.route('/pos/orders', methods=['GET', 'POST'])
+def handle_pos_orders():
+    """Manejar pedidos del POS - GET para obtener, POST para crear"""
+    if request.method == 'GET':
+        # Obtener pedidos pendientes para el POS
+        try:
+            orders = firebase_manager.get_pending_orders()
+            return jsonify({
+                "orders": orders,
+                "count": len(orders),
+                "status": "success"
+            })
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo pedidos POS: {str(e)}")
+            return jsonify({"error": str(e)}), 500
+    
+    elif request.method == 'POST':
+        # Crear nuevo pedido directo al sistema POS
+        try:
+            data = request.get_json()
+            logger.info(f"📦 Recibiendo pedido directo para POS: {data.get('payer', {}).get('name', 'Sin nombre')}")
+            
+            # Validar datos requeridos
+            if not data or 'items' not in data or 'payer' not in data:
+                return jsonify({"error": "Datos incompletos"}), 400
+            
+            # Preparar datos del pedido para Firebase
+            order_data = {
+                "customer_info": {
+                    "name": data['payer']['name'],
+                    "phone": data['payer']['phone']['number'],
+                    "email": data['payer'].get('email', f"{data['payer']['phone']['number']}@caffeymiga.com")
+                },
+                "items": data['items'],
+                "payment_method": data.get('payment_method', 'efectivo'),
+                "notes": data.get('notes', ''),
+                "metadata": data.get('metadata', {}),
+                "status": "pendiente",
+                "pos_ready": True,  # Marca que está listo para el POS
+                "created_at": datetime.now().isoformat(),
+                "source": "web_direct_pos"
+            }
+            
+            # Guardar en Firebase
+            order_id = firebase_manager.save_order(order_data)
+            
+            logger.info(f"🔥 Pedido directo guardado en Firebase: {order_id}")
+            
+            return jsonify({
+                "message": "Pedido enviado al sistema POS",
+                "order_id": order_id,
+                "status": "success"
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Error procesando pedido directo: {str(e)}")
+            return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 @app.route('/pos/orders/<order_id>/status', methods=['PUT'])
 def update_order_status(order_id):
@@ -342,6 +391,17 @@ def not_found(error):
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({"error": "Error interno del servidor"}), 500
+
+# Rutas para servir archivos estáticos
+@app.route('/<path:filename>')
+def serve_static_files(filename):
+    """Servir archivos estáticos (CSS, JS, imágenes, etc.)"""
+    return send_from_directory('.', filename)
+
+@app.route('/img/<path:filename>')
+def serve_images(filename):
+    """Servir imágenes desde la carpeta img"""
+    return send_from_directory('img', filename)
 
 if __name__ == '__main__':
     print("\n" + "="*50)

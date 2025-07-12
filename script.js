@@ -1683,8 +1683,8 @@ async function procesarPedidoSistema(metodoPago) {
         // Mostrar loading
         showLoadingMessage('Procesando pedido...');
         
-        // Enviar al backend
-        const response = await fetch('http://localhost:3000/create_preference', {
+        // Enviar al backend - endpoint específico para pedidos del sistema
+        const response = await fetch('http://localhost:3000/pos/orders', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1692,18 +1692,29 @@ async function procesarPedidoSistema(metodoPago) {
             body: JSON.stringify(orderData)
         });
         
+        console.log('📡 Respuesta del servidor:', response.status, response.statusText);
+        
         if (!response.ok) {
-            throw new Error(`Error del servidor: ${response.status}`);
+            const errorText = await response.text();
+            console.error('❌ Error del servidor:', errorText);
+            throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
         }
         
         const result = await response.json();
         console.log('✅ Pedido procesado:', result);
+        
+        // Ocultar loading
+        hideLoadingMessage();
         
         // Mostrar confirmación
         mostrarConfirmacionPedido(metodoPago, total, nombre, telefono, horaRecogida);
         
     } catch (error) {
         console.error('❌ Error procesando pedido:', error);
+        
+        // Ocultar loading
+        hideLoadingMessage();
+        
         alert('Error al procesar el pedido. Por favor intenta nuevamente.');
     }
 }
@@ -1730,8 +1741,16 @@ function mostrarConfirmacionPedido(metodoPago, total, nombre, telefono, horaReco
     
     // Limpiar carrito y volver al inicio
     carrito = [];
-    actualizarCarrito();
-    mostrarCategoria('promociones');
+    mostrarCarrito();
+    
+    // Resetear contadores
+    document.querySelectorAll('[id^="cantidad-"]').forEach(span => {
+        span.textContent = '0';
+    });
+    
+    // Cerrar modal y limpiar formulario
+    document.getElementById('formulario-modal').style.display = 'none';
+    document.getElementById('formulario').reset();
 }
 
 // Mostrar mensaje de loading
@@ -1771,4 +1790,12 @@ function showLoadingMessage(mensaje) {
     setTimeout(() => {
         overlay.style.display = 'none';
     }, 3000);
+}
+
+// Ocultar mensaje de loading
+function hideLoadingMessage() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
 }
