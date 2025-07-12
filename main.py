@@ -62,15 +62,6 @@ def serve_index():
     return send_file('index.html')
 
 @app.route('/health', methods=['GET'])
-def health_check():
-    """Verificar que el servidor esté funcionando"""
-    return jsonify({
-        "status": "ok",
-        "message": "Servidor Caffe & Miga funcionando",
-        "timestamp": datetime.now().isoformat(),
-        "mercadopago_status": "connected" if sdk else "error"
-    })
-
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Endpoint de diagnóstico para verificar el estado del servidor"""
