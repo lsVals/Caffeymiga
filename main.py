@@ -7,6 +7,11 @@ import mercadopago
 import os
 from datetime import datetime
 import logging
+from dotenv import load_dotenv
+from firebase_config import firebase_manager
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -16,10 +21,20 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Permitir requests desde el frontend
 
-# Configuración de Mercado Pago
-# IMPORTANTE: Reemplaza "PROD_ACCESS_TOKEN" con tu Access Token real
-# El Access Token se ve así: "APP_USR-1234567890123456-070112-abcdef1234567890abcdef1234567890-123456789"
-PROD_ACCESS_TOKEN = "PROD_ACCESS_TOKEN"  # ← CAMBIAR POR TU ACCESS TOKEN REAL
+# Configuración de Mercado Pago - Leer desde .env
+PROD_ACCESS_TOKEN = os.getenv('PROD_ACCESS_TOKEN')
+TEST_ACCESS_TOKEN = os.getenv('TEST_ACCESS_TOKEN', 'TEST-8414674373408503-071123-82b03c16c0be00421b1f1c9ad6e8958d-1016726005')
+
+# Usar modo de prueba para desarrollo
+USE_TEST_MODE = os.getenv('USE_TEST_MODE', 'True').lower() == 'true'
+ACCESS_TOKEN = TEST_ACCESS_TOKEN if USE_TEST_MODE else PROD_ACCESS_TOKEN
+
+if not ACCESS_TOKEN:
+    logger.error("❌ ACCESS TOKEN no encontrado")
+    logger.error("❌ Asegúrate de que existe el archivo .env con PROD_ACCESS_TOKEN=tu_token")
+else:
+    mode = "TEST" if USE_TEST_MODE else "PRODUCCIÓN"
+    logger.info(f"✅ Access Token cargado ({mode}): {ACCESS_TOKEN[:20]}...")
 
 # Datos de tu aplicación (ya los tienes):
 # User ID: 1016726005
@@ -29,7 +44,7 @@ PROD_ACCESS_TOKEN = "PROD_ACCESS_TOKEN"  # ← CAMBIAR POR TU ACCESS TOKEN REAL
 
 # Inicializar SDK de Mercado Pago
 try:
-    sdk = mercadopago.SDK(PROD_ACCESS_TOKEN)
+    sdk = mercadopago.SDK(ACCESS_TOKEN)
     logger.info("✅ SDK de Mercado Pago inicializado correctamente")
 except Exception as e:
     logger.error(f"❌ Error inicializando SDK: {e}")
@@ -64,13 +79,28 @@ def create_preference():
         if not data.get('items') or len(data['items']) == 0:
             return jsonify({"error": "No se encontraron items en el pedido"}), 400
         
+        # Procesar items y asegurar que tengan currency_id
+        processed_items = []
+        for item in data['items']:
+            processed_item = {
+                "id": item.get('id', 'item'),
+                "title": item.get('title', 'Producto'),
+                "currency_id": "MXN",  # Moneda de México
+                "picture_url": item.get('picture_url', ''),
+                "description": item.get('description', ''),
+                "category_id": item.get('category_id', 'food'),
+                "quantity": int(item.get('quantity', 1)),
+                "unit_price": float(item.get('unit_price', 0))
+            }
+            processed_items.append(processed_item)
+        
         # Calcular total para validación
-        total = sum(item['unit_price'] * item['quantity'] for item in data['items'])
+        total = sum(item['unit_price'] * item['quantity'] for item in processed_items)
         logger.info(f"💰 Total del pedido: ${total}")
         
         # Configurar preferencia
         preference_data = {
-            "items": data['items'],
+            "items": processed_items,
             "payer": {
                 "name": data.get('payer', {}).get('name', ''),
                 "surname": "",
@@ -81,11 +111,10 @@ def create_preference():
                 }
             },
             "back_urls": {
-                "success": data.get('back_urls', {}).get('success', 'http://localhost:8000/success.html'),
-                "failure": data.get('back_urls', {}).get('failure', 'http://localhost:8000/failure.html'),
-                "pending": data.get('back_urls', {}).get('pending', 'http://localhost:8000/pending.html')
+                "success": "http://localhost:8000/success.html",
+                "failure": "http://localhost:8000/failure.html",
+                "pending": "http://localhost:8000/pending.html"
             },
-            "auto_return": "approved",
             "payment_methods": {
                 "excluded_payment_methods": [],
                 "excluded_payment_types": [],
@@ -105,13 +134,40 @@ def create_preference():
             preference = preference_response["response"]
             logger.info(f"✅ Preferencia creada: {preference['id']}")
             
+            # 🔥 GUARDAR PEDIDO EN FIREBASE 🔥
+            order_data = {
+                "preference_id": preference["id"],
+                "external_reference": preference.get("external_reference"),
+                "customer": {
+                    "name": data.get('payer', {}).get('name', ''),
+                    "email": data.get('payer', {}).get('email', ''),
+                    "phone": data.get('payer', {}).get('phone', {}).get('number', ''),
+                    "payment_method": data.get('payment_method', 'tarjeta')
+                },
+                "items": processed_items,
+                "total": total,
+                "currency": "MXN",
+                "payment_status": "pending",
+                "metadata": data.get('metadata', {}),
+                "notes": data.get('notes', ''),
+                "source": "web_ecommerce"
+            }
+            
+            # Guardar en Firebase
+            order_id = firebase_manager.save_order(order_data)
+            if order_id:
+                logger.info(f"🔥 Pedido guardado en Firebase: {order_id}")
+            else:
+                logger.warning("⚠️ No se pudo guardar en Firebase, continuando...")
+            
             return jsonify({
                 "id": preference["id"],
                 "init_point": preference["init_point"],
                 "sandbox_init_point": preference.get("sandbox_init_point"),
                 "status": "success",
                 "external_reference": preference.get("external_reference"),
-                "total": total
+                "total": total,
+                "firebase_order_id": order_id
             })
         else:
             logger.error(f"❌ Error creando preferencia: {preference_response}")
@@ -149,10 +205,23 @@ def webhook():
                     
                     logger.info(f"💳 Pago {payment_id}: {status}")
                     
+                    # 🔥 ACTUALIZAR ESTADO EN FIREBASE 🔥
+                    payment_data = {
+                        'status': status,
+                        'payment_id': payment_id,
+                        'external_reference': external_reference,
+                        'payment_method': payment.get('payment_method_id'),
+                        'amount': payment.get('transaction_amount')
+                    }
+                    
+                    # Buscar el pedido por external_reference y actualizar
+                    # (En una implementación más robusta, almacenarías la relación preference_id -> firebase_order_id)
+                    
                     # Aquí puedes procesar según el estado del pago
                     if status == 'approved':
                         logger.info(f"✅ Pago aprobado: {external_reference}")
-                        # Aquí podrías enviar WhatsApp automático, guardar en BD, etc.
+                        logger.info(f"🔥 Pedido listo para preparar en el POS!")
+                        # Firebase automáticamente notificará al POS
                         
                     elif status == 'rejected':
                         logger.info(f"❌ Pago rechazado: {external_reference}")
@@ -192,6 +261,78 @@ def get_payment_status(payment_id):
             
     except Exception as e:
         logger.error(f"❌ Error obteniendo estado del pago: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# 🔥 ENDPOINTS PARA EL SISTEMA POS 🔥
+
+@app.route('/pos/orders', methods=['GET'])
+def get_pos_orders():
+    """Obtener pedidos pendientes para el POS"""
+    try:
+        orders = firebase_manager.get_pending_orders()
+        return jsonify({
+            "orders": orders,
+            "count": len(orders),
+            "status": "success"
+        })
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo pedidos POS: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/pos/orders/<order_id>/status', methods=['PUT'])
+def update_order_status(order_id):
+    """Actualizar estado de un pedido desde el POS"""
+    try:
+        data = request.get_json()
+        new_status = data.get('status')
+        
+        # Estados válidos: preparando, listo, entregado, cancelado
+        valid_statuses = ['preparando', 'listo', 'entregado', 'cancelado']
+        if new_status not in valid_statuses:
+            return jsonify({"error": "Estado inválido"}), 400
+        
+        success = firebase_manager.update_order_status(order_id, new_status)
+        
+        if success:
+            return jsonify({
+                "message": f"Estado actualizado a: {new_status}",
+                "order_id": order_id,
+                "status": "success"
+            })
+        else:
+            return jsonify({"error": "No se pudo actualizar el estado"}), 500
+            
+    except Exception as e:
+        logger.error(f"❌ Error actualizando estado: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/pos/dashboard', methods=['GET'])
+def pos_dashboard():
+    """Dashboard simple para ver el estado del POS"""
+    try:
+        orders = firebase_manager.get_pending_orders()
+        
+        # Contar por estados
+        stats = {
+            'total': len(orders),
+            'listo_para_preparar': 0,
+            'preparando': 0,
+            'listo': 0
+        }
+        
+        for order in orders:
+            status = order.get('pos_status', 'listo_para_preparar')
+            if status in stats:
+                stats[status] += 1
+        
+        return jsonify({
+            "statistics": stats,
+            "recent_orders": orders[:10],  # Últimos 10 pedidos
+            "firebase_status": "connected" if firebase_manager.db else "disconnected"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error en dashboard POS: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.errorhandler(404)
