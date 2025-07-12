@@ -67,8 +67,10 @@ const MERCADO_PAGO_CONFIG = {
     // IMPORTANTE: Public Key de PRODUCCIÓN
     publicKey: "APP_USR-e440d8d5-6f4e-464e-bff1-89b92613fd19", // 🔑 PUBLIC KEY DE PRODUCCIÓN
     
-    // URL de tu backend (ajusta según tu configuración)
-    backendUrl: "http://localhost:3000", // Cambia por la URL de tu backend
+    // URL de tu backend - Detectar automáticamente si es local o remoto
+    backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+        ? "http://localhost:3000" 
+        : `http://${window.location.hostname}:3000`, // Usar la misma IP que la página
     
     // Endpoints de tu backend
     endpoints: {
@@ -1540,7 +1542,7 @@ async function crearPreferenciaPago() {
         console.log('📦 Datos del pedido:', orderData);
         
         // Enviar al backend para crear la preferencia de Mercado Pago
-        const response = await fetch('http://localhost:3000/create_preference', {
+        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/create_preference`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1682,6 +1684,7 @@ function volverAWhatsApp() {
 async function procesarPedidoSistema(metodoPago) {
     try {
         console.log(`🔄 Procesando pedido con método: ${metodoPago}`);
+        console.log(`🌐 URL del servidor: ${MERCADO_PAGO_CONFIG.backendUrl}`);
         
         // Obtener datos del formulario
         const nombre = document.getElementById('nombre').value;
@@ -1744,7 +1747,7 @@ async function procesarPedidoSistema(metodoPago) {
         showLoadingMessage('Procesando pedido...');
         
         // Enviar al backend - endpoint específico para pedidos del sistema
-        const response = await fetch('http://localhost:3000/pos/orders', {
+        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/pos/orders`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1775,7 +1778,17 @@ async function procesarPedidoSistema(metodoPago) {
         // Ocultar loading
         hideLoadingMessage();
         
-        alert('Error al procesar el pedido. Por favor intenta nuevamente.');
+        // Mostrar error más específico
+        let errorMessage = 'Error al procesar el pedido.';
+        if (error.message.includes('fetch')) {
+            errorMessage = '🌐 No se puede conectar al servidor. Verifica tu conexión a internet y que estés en la misma red WiFi.';
+        } else if (error.message.includes('400')) {
+            errorMessage = '📝 Datos del pedido incompletos. Verifica que todos los campos estén llenos.';
+        } else if (error.message.includes('500')) {
+            errorMessage = '⚠️ Error del servidor. Por favor intenta nuevamente en unos momentos.';
+        }
+        
+        alert(errorMessage + '\n\nDetalles técnicos: ' + error.message);
     }
 }
 
@@ -1873,7 +1886,7 @@ let lastSyncTime = null;
 async function checkPOSConnection() {
     try {
         console.log('🔍 Verificando conexión POS...');
-        const response = await fetch('/pos/test');
+        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/pos/test`);
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -1978,7 +1991,7 @@ async function processPendingOrders() {
 // Obtener estadísticas del POS
 async function getPOSStats() {
     try {
-        const response = await fetch('/pos/stats');
+        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}/pos/stats`);
         const data = await response.json();
         
         if (data.status === 'success') {

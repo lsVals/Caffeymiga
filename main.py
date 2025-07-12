@@ -9,6 +9,8 @@ from datetime import datetime
 import logging
 from dotenv import load_dotenv
 from firebase_config import firebase_manager
+import sqlite3
+import json
 
 # Cargar variables de entorno desde .env
 load_dotenv()
@@ -165,6 +167,9 @@ def create_preference():
             else:
                 logger.warning("⚠️ No se pudo guardar en Firebase, continuando...")
             
+            # Guardar también en SQLite local
+            save_order_to_sqlite(order_data)
+            
             return jsonify({
                 "id": preference["id"],
                 "init_point": preference["init_point"],
@@ -318,7 +323,14 @@ def pos_orders():
             firebase_result = firebase_manager.save_order(order_data)
             
             if firebase_result:
-                logger.info(f"✅ Pedido {data.get('payment_method')} guardado: {order_id}")
+                logger.info(f"✅ Pedido {data.get('payment_method')} guardado en Firebase: {order_id}")
+                
+                # Guardar también en SQLite local para sincronización con POS
+                sqlite_result = save_order_to_sqlite(order_data)
+                if sqlite_result:
+                    logger.info(f"✅ Pedido {order_id} también guardado en SQLite local")
+                else:
+                    logger.warning(f"⚠️ Pedido {order_id} guardado en Firebase pero falló SQLite")
                 
                 return jsonify({
                     "success": True,
@@ -567,6 +579,61 @@ def serve_static_files(filename):
 def serve_images(filename):
     """Servir imágenes desde la carpeta img"""
     return send_from_directory('img', filename)
+
+def save_order_to_sqlite(order_data):
+    """Guardar pedido también en SQLite local para sincronización con POS"""
+    try:
+        db_path = "cafeteria_sistema/pos_pedidos.db"
+        
+        # Verificar si existe el directorio
+        import os
+        if not os.path.exists("cafeteria_sistema"):
+            logger.warning("⚠️ Directorio cafeteria_sistema no encontrado")
+            return False
+        
+        # Verificar si existe la base de datos
+        if not os.path.exists(db_path):
+            logger.warning("⚠️ Base de datos pos_pedidos.db no encontrada")
+            return False
+        
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        
+        # Extraer datos del order_data
+        order_id = order_data['id']
+        customer = order_data.get('customer', {})
+        items = order_data.get('items', [])
+        
+        # Convertir items a JSON string
+        items_json = json.dumps(items)
+        
+        # Insertar en la tabla pedidos
+        c.execute("""
+            INSERT INTO pedidos (id, cliente_nombre, cliente_telefono, hora_recogida, 
+                               items, total, estado, metodo_pago, fecha_creacion, fecha_actualizacion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            order_id,
+            customer.get('name', ''),
+            customer.get('phone', ''),
+            order_data.get('metadata', {}).get('pickup_time', ''),
+            items_json,
+            order_data.get('total', 0),
+            'pendiente',  # Estado inicial
+            customer.get('payment_method', 'efectivo'),
+            order_data.get('timestamp', datetime.now().isoformat()),
+            datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Pedido {order_id} guardado también en SQLite local")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error guardando en SQLite: {e}")
+        return False
 
 if __name__ == '__main__':
     print("\n" + "="*50)

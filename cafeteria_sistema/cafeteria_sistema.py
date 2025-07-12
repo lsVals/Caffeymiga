@@ -1481,18 +1481,10 @@ class AppCafeteria(tk.Tk):
                  command=lambda: self.update_order_status_and_refresh(order['id'], 'completado'),
                  bg="#27AE60", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
         
-        tk.Button(buttons_frame, text="❌ CANCELAR PEDIDO", 
-                 command=lambda: self.update_order_status_and_refresh(order['id'], 'cancelado'),
-                 bg="#E74C3C", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
+        tk.Button(buttons_frame, text="🎫 AGREGAR A TICKETS", 
+                 command=lambda: self.add_web_order_to_tickets(order),
+                 bg="#3498DB", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=(0, 10))
         
-        tk.Button(buttons_frame, text="🎫 AGREGAR A TICKETS", 
-                 command=lambda: self.add_web_order_to_tickets(order),
-                 bg="#3498DB", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left")
-
-        tk.Button(buttons_frame, text="🎫 AGREGAR A TICKETS", 
-                 command=lambda: self.add_web_order_to_tickets(order),
-                 bg="#3498DB", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=10)
-
         tk.Button(buttons_frame, text="❌ CANCELAR PEDIDO", 
                  command=lambda: self.update_order_status_and_refresh(order['id'], 'cancelado'),
                  bg="#E74C3C", fg="white", font=("Segoe UI", 12, "bold")).pack(side="right")
