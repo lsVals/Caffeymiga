@@ -475,12 +475,13 @@ function configurarCarrito() {
             return;
         }
         
+        // TODOS los métodos van al sistema POS ahora
         if (metodoPago.value === 'tarjeta') {
             // Pago en línea con Mercado Pago
             procesarPagoEnLinea();
         } else {
-            // Efectivo o terminal - enviar por WhatsApp directamente
-            enviarPedidoWhatsApp();
+            // Efectivo o terminal - también van al sistema POS
+            procesarPedidoSistema(metodoPago.value);
         }
     });
 }
@@ -1457,7 +1458,7 @@ function mostrarCheckoutModal() {
     };
 }
 
-// Crear preferencia de pago
+// Crear preferencia de pago - NUEVA VERSIÓN CON BACKEND
 async function crearPreferenciaPago() {
     try {
         console.log('🔄 Creando preferencia de pago...');
@@ -1477,16 +1478,21 @@ async function crearPreferenciaPago() {
                 nombreProducto += ` (${item.saboresElegidos.join(' + ')})`;
             }
             
+            if (item.lecheElegida && item.lecheElegida !== 'Entera') {
+                nombreProducto += ` (Leche: ${item.lecheElegida})`;
+            }
+            
             return {
+                id: item.nombre.toLowerCase().replace(/\s+/g, '_'),
                 title: nombreProducto,
                 quantity: item.cantidad,
                 unit_price: item.precio,
-                currency_id: 'GTQ' // Cambia por tu moneda (MXN, USD, etc.)
+                description: `${item.nombre} - Hora recogida: ${horaRecogida}`
             };
         });
         
-        // Datos de la preferencia
-        const preferenceData = {
+        // Datos de la preferencia para nuestro backend
+        const orderData = {
             items: items,
             payer: {
                 name: nombre,
@@ -1496,28 +1502,23 @@ async function crearPreferenciaPago() {
                 },
                 email: `${telefono}@caffeymiga.com` // Email temporal basado en teléfono
             },
-            back_urls: MERCADO_PAGO_CONFIG.redirectUrls,
-            auto_return: "approved",
-            external_reference: `caffeymiga_${Date.now()}`,
-            statement_descriptor: "CAFFE&MIGA",
+            payment_method: 'tarjeta',
+            notes: `Hora de recogida: ${horaRecogida}. Total: $${total}`,
             metadata: {
-                hora_recogida: horaRecogida,
-                telefono: telefono,
-                nombre: nombre,
-                pedido_id: `CM${Date.now()}`,
-                timestamp: new Date().toISOString()
+                pickup_time: horaRecogida,
+                source: 'web_ecommerce'
             }
         };
         
-        console.log('📦 Datos de preferencia:', preferenceData);
+        console.log('📦 Datos del pedido:', orderData);
         
-        // Llamar al backend para crear la preferencia
-        const response = await fetch(`${MERCADO_PAGO_CONFIG.backendUrl}${MERCADO_PAGO_CONFIG.endpoints.createPreference}`, {
+        // Enviar al backend para crear la preferencia de Mercado Pago
+        const response = await fetch('http://localhost:3000/create_preference', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(preferenceData)
+            body: JSON.stringify(orderData)
         });
         
         if (!response.ok) {
@@ -1527,11 +1528,12 @@ async function crearPreferenciaPago() {
         const preference = await response.json();
         console.log('✅ Preferencia creada:', preference);
         
-        // Crear el checkout con la preferencia
-        if (preference.id) {
-            await crearCheckout(preference.id);
+        // Redirigir a Mercado Pago
+        if (preference.init_point) {
+            console.log('🔄 Redirigiendo a Mercado Pago...');
+            window.location.href = preference.init_point;
         } else {
-            throw new Error('No se recibió ID de preferencia del backend');
+            throw new Error('No se recibió link de pago de Mercado Pago');
         }
         
     } catch (error) {
@@ -1614,4 +1616,159 @@ function reintentar_pago() {
 function volverAWhatsApp() {
     document.getElementById('checkout-modal').style.display = 'none';
     enviarPedidoWhatsApp();
+}
+
+// Procesar pedido para efectivo o terminal - NUEVA FUNCIÓN
+async function procesarPedidoSistema(metodoPago) {
+    try {
+        console.log(`🔄 Procesando pedido con método: ${metodoPago}`);
+        
+        // Obtener datos del formulario
+        const nombre = document.getElementById('nombre').value;
+        const telefono = document.getElementById('telefono').value;
+        const horaRecogida = document.getElementById('horaRecogida').value;
+        
+        // Validar campos
+        if (!nombre || !telefono || !horaRecogida) {
+            alert('Por favor completa todos los campos');
+            return;
+        }
+        
+        let total = 0;
+        const items = carrito.map(item => {
+            const subtotal = item.precio * item.cantidad;
+            total += subtotal;
+            
+            let nombreProducto = item.nombrePersonalizado || item.nombre;
+            if (item.saboresElegidos && item.saboresElegidos.length > 0) {
+                nombreProducto += ` (${item.saboresElegidos.join(' + ')})`;
+            }
+            
+            if (item.lecheElegida && item.lecheElegida !== 'Entera') {
+                nombreProducto += ` (Leche: ${item.lecheElegida})`;
+            }
+            
+            return {
+                id: item.nombre.toLowerCase().replace(/\s+/g, '_'),
+                title: nombreProducto,
+                quantity: item.cantidad,
+                unit_price: item.precio,
+                description: `${item.nombre} - Hora recogida: ${horaRecogida}`
+            };
+        });
+        
+        // Datos del pedido para el sistema
+        const orderData = {
+            items: items,
+            payer: {
+                name: nombre,
+                phone: {
+                    area_code: "502",
+                    number: telefono
+                },
+                email: `${telefono}@caffeymiga.com`
+            },
+            payment_method: metodoPago, // 'efectivo' o 'terminal'
+            notes: `Hora de recogida: ${horaRecogida}. Total: $${total}. Método: ${metodoPago === 'efectivo' ? 'Efectivo en sucursal' : 'Terminal Mercado Pago en sucursal'}`,
+            metadata: {
+                pickup_time: horaRecogida,
+                source: 'web_ecommerce',
+                payment_method: metodoPago,
+                requires_payment: false // No requiere pago en línea
+            }
+        };
+        
+        console.log('📦 Enviando pedido al sistema:', orderData);
+        
+        // Mostrar loading
+        showLoadingMessage('Procesando pedido...');
+        
+        // Enviar al backend
+        const response = await fetch('http://localhost:3000/create_preference', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(orderData)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error del servidor: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Pedido procesado:', result);
+        
+        // Mostrar confirmación
+        mostrarConfirmacionPedido(metodoPago, total, nombre, telefono, horaRecogida);
+        
+    } catch (error) {
+        console.error('❌ Error procesando pedido:', error);
+        alert('Error al procesar el pedido. Por favor intenta nuevamente.');
+    }
+}
+
+// Mostrar confirmación de pedido
+function mostrarConfirmacionPedido(metodoPago, total, nombre, telefono, horaRecogida) {
+    const metodoTexto = metodoPago === 'efectivo' ? 'Efectivo en sucursal' : 'Terminal Mercado Pago en sucursal';
+    
+    const mensaje = `
+    🎉 ¡Pedido confirmado!
+    
+    👤 Cliente: ${nombre}
+    📱 Teléfono: ${telefono}
+    🕐 Hora de recogida: ${horaRecogida}
+    💰 Total: $${total}
+    💳 Método de pago: ${metodoTexto}
+    
+    ✅ Tu pedido ha sido enviado a la cafetería
+    📱 Te contactaremos para confirmar
+    ⏰ Ten listo tu pago cuando recojas
+    `;
+    
+    alert(mensaje);
+    
+    // Limpiar carrito y volver al inicio
+    carrito = [];
+    actualizarCarrito();
+    mostrarCategoria('promociones');
+}
+
+// Mostrar mensaje de loading
+function showLoadingMessage(mensaje) {
+    // Crear overlay de loading si no existe
+    let overlay = document.getElementById('loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'loading-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+        `;
+        document.body.appendChild(overlay);
+    }
+    
+    overlay.innerHTML = `
+        <div style="text-align: center;">
+            <div style="font-size: 50px; margin-bottom: 20px;">⏳</div>
+            <div>${mensaje}</div>
+        </div>
+    `;
+    overlay.style.display = 'flex';
+    
+    // Ocultar después de 3 segundos
+    setTimeout(() => {
+        overlay.style.display = 'none';
+    }, 3000);
 }
