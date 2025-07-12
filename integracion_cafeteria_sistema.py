@@ -4,8 +4,22 @@
 import requests
 import threading
 import time
+import tkinter as tk
 from tkinter import messagebox
 import json
+from datetime import datetime
+
+# Agrega esta función si no existe en tu archivo o impórtala si está en otro módulo
+def guardar_ticket_sqlite(fecha, producto, cantidad, precio, pago, estado, motivo_cancelacion):
+    # Implementa aquí la lógica para guardar el ticket en la base de datos SQLite
+    # Por ejemplo:
+    # import sqlite3
+    # conn = sqlite3.connect('cafeteria.db')
+    # cursor = conn.cursor()
+    # cursor.execute("INSERT INTO tickets (fecha, producto, cantidad, precio, pago, estado, motivo_cancelacion) VALUES (?, ?, ?, ?, ?, ?, ?)", (fecha, producto, cantidad, precio, pago, estado, motivo_cancelacion))
+    # conn.commit()
+    # conn.close()
+    pass
 
 # Nueva clase para manejar pedidos web
 class PedidosOnlineManager:
@@ -56,15 +70,12 @@ class PedidosOnlineManager:
             # Crear descripción de productos
             productos_desc = []
             total_cantidad = 0
-            
             for item in items:
                 qty = item.get('quantity', 1)
                 title = item.get('title', 'Producto')
-                price = item.get('unit_price', 0)
-                productos_desc.append(f"{qty}x {title} (${price})")
+                productos_desc.append(f"{qty}x {title}")
                 total_cantidad += qty
-            
-            productos_str = " + ".join(productos_desc)
+            productos_str = ", ".join(productos_desc)
             fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Guardar en base de datos

@@ -9,6 +9,17 @@ import requests
 import threading
 import time
 import json
+import tkinter as tk
+from tkinter import messagebox
+
+# Asegúrate de importar o definir guardar_ticket_sqlite y datetime
+from datetime import datetime
+try:
+    from cafeteria_sistema import guardar_ticket_sqlite
+except ImportError:
+    # Define a dummy function for demonstration if not available
+    def guardar_ticket_sqlite(**kwargs):
+        print("guardar_ticket_sqlite called with:", kwargs)
 
 # ========================================
 # 2. AGREGAR CLASE ANTES DE AppCafeteria
