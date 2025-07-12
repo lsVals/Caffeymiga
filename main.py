@@ -583,10 +583,14 @@ def serve_images(filename):
 def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
+        # Solo intentar guardar en SQLite si estamos en desarrollo local
+        if os.getenv('ENVIRONMENT', 'development') == 'production':
+            logger.info("🌐 Entorno de producción - saltando SQLite local")
+            return True
+        
         db_path = "cafeteria_sistema/pos_pedidos.db"
         
         # Verificar si existe el directorio
-        import os
         if not os.path.exists("cafeteria_sistema"):
             logger.warning("⚠️ Directorio cafeteria_sistema no encontrado")
             return False

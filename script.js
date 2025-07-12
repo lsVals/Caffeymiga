@@ -67,10 +67,21 @@ const MERCADO_PAGO_CONFIG = {
     // IMPORTANTE: Public Key de PRODUCCIÓN
     publicKey: "APP_USR-e440d8d5-6f4e-464e-bff1-89b92613fd19", // 🔑 PUBLIC KEY DE PRODUCCIÓN
     
-    // URL de tu backend - Detectar automáticamente si es local o remoto
-    backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-        ? "http://localhost:3000" 
-        : `http://${window.location.hostname}:3000`, // Usar la misma IP que la página
+    // URL de tu backend - Detectar automáticamente el entorno
+    backendUrl: (() => {
+        // Si estamos en GitHub Pages, usar el servidor de producción
+        if (window.location.hostname.includes('github.io')) {
+            return 'https://caffeymiga.onrender.com'; // URL de producción en Render
+        }
+        // Si estamos en localhost o IP local
+        else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return "http://localhost:3000";
+        }
+        // Si estamos en red local (IP)
+        else {
+            return `http://${window.location.hostname}:3000`;
+        }
+    })(),
     
     // Endpoints de tu backend
     endpoints: {
