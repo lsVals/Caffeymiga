@@ -285,8 +285,40 @@ def webhook():
                     # Aquí puedes procesar según el estado del pago
                     if status == 'approved':
                         logger.info(f"✅ Pago aprobado: {external_reference}")
-                        logger.info(f"🔥 Pedido listo para preparar en el POS!")
-                        # Firebase automáticamente notificará al POS
+                        logger.info(f"🔥 Creando pedido completo desde Mercado Pago")
+                        
+                        # Extraer información completa del pago
+                        payer = payment.get('payer', {})
+                        additional_info = payment.get('additional_info', {})
+                        items = additional_info.get('items', [])
+                        
+                        # Crear pedido completo para POS
+                        order_data = {
+                            'id': f"web_{payment_id}",
+                            'preference_id': external_reference,
+                            'firebase_id': f"mp_{payment_id}",
+                            'timestamp': datetime.now().isoformat(),
+                            'status': 'approved',
+                            'payment_status': 'approved',
+                            'pos_status': 'nuevo',
+                            'total': payment.get('transaction_amount', 0),
+                            'customer': {
+                                'name': payer.get('first_name', '') + ' ' + payer.get('last_name', ''),
+                                'phone': payer.get('phone', {}).get('number', ''),
+                                'email': payer.get('email', ''),
+                                'payment_method': f"Terminal Mercado Pago en sucursal"
+                            },
+                            'items': items,
+                            'metadata': additional_info.get('payer', {}),
+                            'notes': f"Pago ID: {payment_id}",
+                            'source': 'mercado_pago_webhook'
+                        }
+                        
+                        # Guardar en Firebase y memoria para sincronización
+                        firebase_result = firebase_manager.save_order(order_data)
+                        if firebase_result:
+                            save_order_to_sqlite(order_data)
+                            logger.info(f"✅ Pedido completo creado desde webhook MP: {order_data['id']}")
                         
                     elif status == 'rejected':
                         logger.info(f"❌ Pago rechazado: {external_reference}")
@@ -690,28 +722,32 @@ def save_order_to_sqlite(order_data):
             order_for_sync = {
                 'id': order_data.get('id', f"web_{int(datetime.now().timestamp())}"),
                 'cliente': {
-                    'nombre': order_data.get('customer', {}).get('name', 'Cliente Web'),
+                    'nombre': order_data.get('customer', {}).get('name', 'Cliente Web').strip(),
                     'telefono': order_data.get('customer', {}).get('phone', 'N/A'),
                     'email': order_data.get('customer', {}).get('email', 'N/A')
                 },
                 'productos': [],
                 'total': order_data.get('total', 0),
-                'metodo_pago': order_data.get('customer', {}).get('payment_method', 'efectivo'),
+                'metodo_pago': order_data.get('customer', {}).get('payment_method', 'mercado_pago'),
                 'estado': 'pending',
                 'pos_status': 'nuevo',
                 'fecha': order_data.get('timestamp', datetime.now().isoformat()),
                 'metadata': order_data.get('metadata', {}),
-                'payment_status': order_data.get('payment_status', 'pending')
+                'payment_status': order_data.get('payment_status', 'pending'),
+                'hora_recogida': order_data.get('metadata', {}).get('pickup_time', 'No especificada')
             }
             
-            # Formatear productos
+            # Formatear productos con información detallada
             for item in order_data.get('items', []):
-                order_for_sync['productos'].append({
+                product_info = {
                     'nombre': item.get('title', 'Producto'),
                     'cantidad': item.get('quantity', 1),
                     'precio': item.get('unit_price', item.get('price', 0)),
-                    'descripcion': item.get('description', '')
-                })
+                    'descripcion': item.get('description', ''),
+                    'categoria': item.get('category_id', ''),
+                    'picture_url': item.get('picture_url', '')
+                }
+                order_for_sync['productos'].append(product_info)
             
             # Guardar en variable global para endpoint
             if not hasattr(app, 'pending_orders'):
