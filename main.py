@@ -426,11 +426,18 @@ def pos_orders():
     
     # Si es GET, continuar con la lógica original
     try:
-        orders = firebase_manager.get_all_orders()
+        # Obtener órdenes de Firebase
+        firebase_orders = firebase_manager.get_all_orders()
+        
+        # Obtener órdenes pendientes en memoria
+        pending_orders = getattr(app, 'pending_orders', [])
+        
+        # Combinar ambas fuentes
+        all_orders = list(firebase_orders) + list(pending_orders)
         
         # Formatear pedidos para el POS
         formatted_orders = []
-        for order in orders:
+        for order in all_orders:
             # Extraer información del cliente
             customer = order.get('customer', {})
             items = order.get('items', [])
@@ -675,46 +682,34 @@ def serve_images(filename):
 def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
-        # En producción (Render), guardar en un archivo temporal JSON
+        # En producción (Render), no guardar en SQLite local
         if os.getenv('ENVIRONMENT') == 'production':
-            logger.info("🌐 Entorno de producción - guardando en archivo temporal")
-            
-            # Crear directorio temporal si no existe
-            temp_dir = "temp_orders"
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            
-            # Guardar en archivo JSON
-            order_file = os.path.join(temp_dir, f"order_{order_data['id']}.json")
-            with open(order_file, 'w', encoding='utf-8') as f:
-                json.dump(order_data, f, ensure_ascii=False, indent=2, default=str)
-            
-            logger.info(f"✅ Pedido guardado en archivo temporal: {order_file}")
+            logger.info("🌐 Entorno de producción - pedido procesado en la nube")
             return True
         
         # En desarrollo local, usar SQLite
-        db_path = "cafeteria_sistema/pos_pedidos.db"
-        
-        # Verificar si existe el directorio
-        if not os.path.exists("cafeteria_sistema"):
-            logger.warning("⚠️ Directorio cafeteria_sistema no encontrado")
-            return False
-        
-        # Verificar si existe la base de datos
-        if not os.path.exists(db_path):
-            logger.warning("⚠️ Base de datos pos_pedidos.db no encontrada")
-            return False
+        db_path = "pos_pedidos.db"  # Usar la base de datos en el directorio raíz
         
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
-        # Extraer datos del order_data
-        order_id = order_data['id']
+        # Generar ID único para el pedido
+        order_id = order_data.get('external_reference', f"web_{int(datetime.now().timestamp())}")
         customer = order_data.get('customer', {})
         items = order_data.get('items', [])
+        metadata = order_data.get('metadata', {})
         
-        # Convertir items a JSON string
-        items_json = json.dumps(items)
+        # Formatear items con nombres de productos reales
+        formatted_items = []
+        for item in items:
+            formatted_items.append({
+                "name": item.get('title', 'Producto'),
+                "price": item.get('unit_price', 0),
+                "quantity": item.get('quantity', 1),
+                "description": item.get('description', '')
+            })
+        
+        items_json = json.dumps(formatted_items, ensure_ascii=False)
         
         # Insertar en la tabla pedidos
         c.execute("""
@@ -725,31 +720,36 @@ def save_order_to_sqlite(order_data):
             order_id,
             customer.get('name', ''),
             customer.get('phone', ''),
-            order_data.get('metadata', {}).get('pickup_time', ''),
+            metadata.get('pickup_time', ''),
             items_json,
             order_data.get('total', 0),
-            'pendiente',  # Estado inicial
-            customer.get('payment_method', 'efectivo'),
-            order_data.get('timestamp', datetime.now().isoformat()),
+            'pendiente',
+            customer.get('payment_method', 'mercado_pago'),
+            datetime.now().isoformat(),
             datetime.now().isoformat()
         ))
         
         conn.commit()
         conn.close()
         
-        logger.info(f"✅ Pedido {order_id} guardado también en SQLite local")
+        logger.info(f"✅ Pedido guardado en SQLite: {order_id}")
+        logger.info(f"📱 Cliente: {customer.get('name', '')}")
+        logger.info(f"💰 Total: ${order_data.get('total', 0)}")
+        
         return True
         
     except Exception as e:
         logger.error(f"❌ Error guardando en SQLite: {e}")
         return False
+        return False
 
 @app.route('/pos/orders/simple', methods=['POST'])
 def pos_orders_simple():
-    """Endpoint simplificado para crear pedidos sin Firebase"""
+    """Endpoint simplificado para crear pedidos y guardar en SQLite"""
     try:
         data = request.get_json()
-        logger.info(f"📦 Procesando pedido simple: {data.get('payer', {}).get('name', 'Sin nombre')}")
+        customer_name = data.get('customer_name', data.get('payer', {}).get('name', 'Sin nombre'))
+        logger.info(f"📦 Procesando pedido simple: {customer_name}")
         
         # Validar datos requeridos
         if not data.get('items') or len(data['items']) == 0:
@@ -761,6 +761,27 @@ def pos_orders_simple():
         # Crear ID único para el pedido
         order_id = f"simple_{int(datetime.now().timestamp())}"
         
+        # Preparar datos para SQLite
+        order_data = {
+            'id': order_id,
+            'cliente_nombre': customer_name,
+            'cliente_telefono': data.get('customer_phone', ''),
+            'hora_recogida': data.get('pickup_time', ''),
+            'items': json.dumps(data.get('items', []), ensure_ascii=False),
+            'total': total,
+            'estado': 'pendiente',
+            'metodo_pago': data.get('payment_method', 'efectivo'),
+            'fecha_creacion': datetime.now().isoformat(),
+            'fecha_actualizacion': datetime.now().isoformat()
+        }
+        
+        # Guardar en SQLite
+        try:
+            save_order_to_sqlite(order_data)
+            logger.info(f"✅ Pedido guardado en SQLite: {order_id}")
+        except Exception as sqlite_error:
+            logger.error(f"❌ Error guardando en SQLite: {sqlite_error}")
+        
         logger.info(f"✅ Pedido simple procesado: {order_id} - Total: ${total}")
         
         return jsonify({
@@ -769,8 +790,8 @@ def pos_orders_simple():
             "order_id": order_id,
             "total": total,
             "payment_method": data.get('payment_method', 'efectivo'),
-            "customer_name": data.get('payer', {}).get('name', ''),
-            "pickup_time": data.get('metadata', {}).get('pickup_time', '')
+            "customer_name": customer_name,
+            "pickup_time": data.get('pickup_time', '')
         })
         
     except Exception as e:
@@ -868,36 +889,61 @@ def test_mercadopago():
             "access_token_configured": bool(ACCESS_TOKEN)
         }), 500
 
-@app.route('/pos/orders/sync', methods=['GET'])
-def sync_orders():
-    """Endpoint para sincronizar pedidos desde producción al POS local"""
+@app.route('/api/orders/save', methods=['POST'])
+def save_order_for_sync():
+    """Guardar pedido para sincronización automática"""
     try:
-        orders = []
+        data = request.get_json()
+        logger.info(f"📝 Guardando pedido para sincronización: {data.get('customer', {}).get('name', 'Sin nombre')}")
         
-        # En producción, leer archivos temporales
-        if os.getenv('ENVIRONMENT') == 'production':
-            temp_dir = "temp_orders"
-            if os.path.exists(temp_dir):
-                for filename in os.listdir(temp_dir):
-                    if filename.endswith('.json'):
-                        file_path = os.path.join(temp_dir, filename)
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                order = json.load(f)
-                                orders.append(order)
-                        except Exception as e:
-                            logger.error(f"Error leyendo {filename}: {e}")
-                
-                # Opcional: limpiar archivos después de leerlos
-                # for filename in os.listdir(temp_dir):
-                #     if filename.endswith('.json'):
-                #         os.remove(os.path.join(temp_dir, filename))
+        # Crear estructura del pedido para sincronización
+        order_for_sync = {
+            'id': data.get('external_reference', f"sync_{int(datetime.now().timestamp())}"),
+            'cliente_nombre': data.get('customer', {}).get('name', ''),
+            'cliente_telefono': data.get('customer', {}).get('phone', ''),
+            'hora_recogida': data.get('metadata', {}).get('pickup_time', ''),
+            'productos': [],
+            'total': data.get('total', 0),
+            'metodo_pago': data.get('customer', {}).get('payment_method', 'mercado_pago'),
+            'fecha': datetime.now().isoformat(),
+            'estado': 'pendiente',
+            'source': 'web_mobile'
+        }
         
-        return jsonify(orders), 200
+        # Formatear productos
+        for item in data.get('items', []):
+            order_for_sync['productos'].append({
+                'nombre': item.get('title', 'Producto'),
+                'precio': item.get('unit_price', 0),
+                'cantidad': item.get('quantity', 1),
+                'descripcion': item.get('description', '')
+            })
+        
+        # Guardar en Firebase con estructura para sincronización
+        firebase_order_id = firebase_manager.save_order(order_for_sync)
+        
+        # También guardar en variable global para endpoint
+        if not hasattr(app, 'pending_orders'):
+            app.pending_orders = []
+        
+        app.pending_orders.append(order_for_sync)
+        
+        # Mantener solo los últimos 50 pedidos en memoria
+        if len(app.pending_orders) > 50:
+            app.pending_orders = app.pending_orders[-50:]
+        
+        logger.info(f"✅ Pedido guardado para sincronización: {order_for_sync['id']}")
+        
+        return jsonify({
+            "status": "success",
+            "order_id": order_for_sync['id'],
+            "firebase_id": firebase_order_id,
+            "message": "Pedido guardado para sincronización"
+        })
         
     except Exception as e:
-        logger.error(f"❌ Error en sync de pedidos: {e}")
-        return jsonify({"error": "Error sincronizando pedidos"}), 500
+        logger.error(f"❌ Error guardando pedido para sync: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     print("\n" + "="*50)
