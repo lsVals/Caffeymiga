@@ -1,0 +1,1 @@
+2025-07-12 15:37:46,218 ERROR:Error en impresión o actualización de inventario: '_tkinter.tkapp' object has no attribute 'generar_e_imprimir_ticket'

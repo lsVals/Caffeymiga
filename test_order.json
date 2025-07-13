@@ -1,0 +1,25 @@
+{
+    "items": [
+        {
+            "id": "test_cappuccino",
+            "title": "Cappuccino de Prueba",
+            "quantity": 1,
+            "unit_price": 55,
+            "description": "Prueba desde script - México"
+        }
+    ],
+    "payer": {
+        "name": "Usuario de Prueba México",
+        "phone": {
+            "area_code": "52",
+            "number": "12345678"
+        },
+        "email": "test@caffeymiga.com"
+    },
+    "payment_method": "tarjeta",
+    "notes": "Pedido de prueba México",
+    "metadata": {
+        "pickup_time": "15:30",
+        "source": "web_test"
+    }
+}

@@ -7,3 +7,4 @@
 2025-07-12 03:03:57,123 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
 2025-07-12 03:06:32,271 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
 2025-07-12 03:06:48,295 CRITICAL:Error crítico al iniciar la aplicación: 'module' object is not callable. Did you mean: 'time.time(...)'?
+2025-07-12 15:39:46,648 ERROR:Error en impresión o actualización de inventario: '_tkinter.tkapp' object has no attribute 'generar_e_imprimir_ticket'

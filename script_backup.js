@@ -499,8 +499,12 @@ function configurarCarrito() {
     });
 }
 
+// Enviar pedido directo al sistema (sin WhatsApp)
+// FUNCIÓN ELIMINADA: Ya no usamos WhatsApp para pedidos
 // Los pedidos ahora se procesan directamente con Mercado Pago y el sistema POS
+function enviarPedidoWhatsApp_ELIMINADA() {
     // Esta función ha sido deshabilitada
+    console.log('⚠️ Función de WhatsApp deshabilitada - usar Mercado Pago');
     return;
         return;
     }
@@ -562,7 +566,10 @@ function configurarCarrito() {
         mensaje += `\n\n� Nota: Pago con tarjeta usando terminal Mercado Pago en sucursal`;
     }
     
+    const numeroWhatsApp = '50246007071'; // Cambia este número por el tuyo
+    const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
     
+    window.open(urlWhatsApp, '_blank');
     
     // Cerrar modal y limpiar carrito
     document.getElementById('formulario-modal').style.display = 'none';
@@ -1673,6 +1680,7 @@ function reintentar_pago() {
     crearPreferenciaPago();
 }
 
+// FUNCIÓN ELIMINADA: Ya no usamos WhatsApp para pedidos
 
 // Procesar pedido para efectivo o terminal - NUEVA FUNCIÓN
 async function procesarPedidoSistema(metodoPago) {
