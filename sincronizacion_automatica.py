@@ -191,11 +191,42 @@ class SincronizadorAutomatico:
                     items_raw = order.get('items', order.get('productos', []))
                     metadata = order.get('metadata', {})
                     
-                    # Formatear items
+                    # Extraer datos del cliente de manera más robusta
+                    cliente_nombre = cliente_info.get('name', '')
+                    cliente_telefono = cliente_info.get('phone', '')
+                    metodo_pago = cliente_info.get('payment_method', 'No especificado')
+                    
+                    # Si el teléfono viene como objeto (estructura antigua)
+                    if isinstance(cliente_telefono, dict):
+                        cliente_telefono = cliente_telefono.get('number', '')
+                    
+                    # Si no hay datos, intentar de la estructura alternativa
+                    if not cliente_nombre and 'payer' in order:
+                        payer = order['payer']
+                        cliente_nombre = payer.get('name', '')
+                        if isinstance(payer.get('phone'), dict):
+                            cliente_telefono = payer.get('phone', {}).get('number', '')
+                        else:
+                            cliente_telefono = payer.get('phone', '')
+                    
+                    print(f"🔍 DEBUG EXTRACCIÓN DATOS:")
+                    print(f"   👤 Nombre extraído: '{cliente_nombre}'")
+                    print(f"   📱 Teléfono extraído: '{cliente_telefono}'")
+                    print(f"   💳 Método pago: '{metodo_pago}'")
+                    print(f"   📊 Estructura customer: {cliente_info}")
+                    print(f"   📊 Estructura payer: {order.get('payer', 'No existe')}")
+                    
+                    # Formatear items con información clara y legible
                     items = []
                     for item in items_raw:
+                        # Obtener nombre base del producto
+                        nombre_producto = item.get('title', item.get('nombre', 'Producto'))
+                        
+                        # Mejorar formato del nombre para mejor legibilidad en POS
+                        nombre_formateado = self._formatear_nombre_producto(nombre_producto)
+                        
                         items.append({
-                            "name": item.get('title', item.get('nombre', 'Producto')),
+                            "name": nombre_formateado,
                             "price": item.get('unit_price', item.get('precio', 0)),
                             "quantity": item.get('quantity', item.get('cantidad', 1)),
                             "description": item.get('description', '')
@@ -211,13 +242,13 @@ class SincronizadorAutomatico:
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         order_id,
-                        cliente_info.get('name', ''),
-                        cliente_info.get('phone', cliente_info.get('number', '')),
+                        cliente_nombre,
+                        cliente_telefono,
                         metadata.get('pickup_time', ''),
                         json.dumps(items, ensure_ascii=False),
                         total,
                         'pendiente',
-                        cliente_info.get('payment_method', 'mercado_pago'),
+                        metodo_pago,
                         order.get('timestamp', datetime.now().isoformat()),
                         datetime.now().isoformat()
                     ))
@@ -226,8 +257,9 @@ class SincronizadorAutomatico:
                     nuevos_pedidos += 1
                     
                     logger.info(f"✅ NUEVO PEDIDO AUTOMÁTICO:")
-                    logger.info(f"   👤 Cliente: {cliente_info.get('name', 'Sin nombre')}")
-                    logger.info(f"   📱 Teléfono: {cliente_info.get('phone', 'Sin teléfono')}")
+                    logger.info(f"   👤 Cliente: {cliente_nombre or 'Sin nombre'}")
+                    logger.info(f"   📱 Teléfono: {cliente_telefono or 'Sin teléfono'}")
+                    logger.info(f"   💳 Pago: {metodo_pago}")
                     logger.info(f"   💰 Total: ${total}")
                     logger.info(f"   🆔 ID: {order_id}")
                     logger.info(f"   📡 Fuente: {fuente}")
@@ -243,6 +275,86 @@ class SincronizadorAutomatico:
         except Exception as e:
             logger.error(f"❌ Error en base de datos: {e}")
             return 0
+    
+    def _formatear_nombre_producto(self, nombre_producto):
+        """Formatear nombre de producto para mejor legibilidad en POS"""
+        try:
+            # Casos especiales para promociones
+            if "2x100 Frappes" in nombre_producto:
+                # Extraer información de sabores y leches
+                if "(" in nombre_producto and ")" in nombre_producto:
+                    # Buscar patrones como "(Moka + Taro)" y "Moka: Deslactosada, Taro: Deslactosada"
+                    partes = nombre_producto.split(" - ")
+                    if len(partes) >= 3:
+                        base = "🎉 PROMO 2x100 Frappes"
+                        sabores = ""
+                        leches = ""
+                        
+                        for parte in partes[1:]:
+                            if "(" in parte and "+" in parte:
+                                # Extraer sabores: "(Moka + Taro)"
+                                sabores = parte.strip("()")
+                            elif ":" in parte and any(leche in parte for leche in ["Entera", "Deslactosada", "Light"]):
+                                # Extraer información de leches
+                                leches = parte
+                        
+                        if sabores and leches:
+                            return f"{base}: {sabores} | Leches: {leches}"
+                        elif sabores:
+                            return f"{base}: {sabores}"
+                
+                return "🎉 PROMO 2x100 Frappes"
+            
+            # Casos para frappes individuales
+            elif "Frappé" in nombre_producto or "frappé" in nombre_producto:
+                if "(Leche:" in nombre_producto:
+                    # Formato: "Frappé Moka (Leche: Deslactosada)"
+                    partes = nombre_producto.split("(Leche:")
+                    if len(partes) == 2:
+                        sabor = partes[0].strip()
+                        leche = partes[1].strip().rstrip(")")
+                        return f"🥤 {sabor} | Leche: {leche}"
+                return f"🥤 {nombre_producto}"
+            
+            # Casos para bebidas frías
+            elif any(bebida in nombre_producto for bebida in ["Latte Matcha", "Cold Brew", "Chai", "Caramel Macchiato"]):
+                if "(Leche:" in nombre_producto:
+                    partes = nombre_producto.split("(Leche:")
+                    if len(partes) == 2:
+                        bebida = partes[0].strip()
+                        leche = partes[1].strip().rstrip(")")
+                        return f"🧊 {bebida} | Leche: {leche}"
+                return f"🧊 {nombre_producto}"
+            
+            # Casos para café caliente
+            elif any(cafe in nombre_producto for cafe in ["Capuchino", "Moka", "Latte", "Americano"]):
+                if "(Leche:" in nombre_producto:
+                    partes = nombre_producto.split("(Leche:")
+                    if len(partes) == 2:
+                        cafe = partes[0].strip()
+                        leche = partes[1].strip().rstrip(")")
+                        return f"☕ {cafe} | Leche: {leche}"
+                return f"☕ {nombre_producto}"
+            
+            # Casos para bebidas embotelladas
+            elif any(refresco in nombre_producto for refresco in ["Coca Cola", "Agua"]):
+                return f"🥤 {nombre_producto}"
+            
+            # Casos para postres
+            elif any(postre in nombre_producto for postre in ["Waffles", "Budín", "Flan"]):
+                return f"🍰 {nombre_producto}"
+            
+            # Casos para pan
+            elif any(pan in nombre_producto for pan in ["Carterita", "Concha"]):
+                return f"🥖 {nombre_producto}"
+            
+            # Producto genérico
+            else:
+                return f"📦 {nombre_producto}"
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Error formateando producto '{nombre_producto}': {e}")
+            return nombre_producto
 
 def main():
     """Ejecutar sincronización automática continua"""

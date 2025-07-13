@@ -1707,8 +1707,7 @@ async function procesarPedidoSistema(metodoPago) {
             alert('Por favor completa todos los campos');
             return;
         }
-        
-        let total = 0;
+          let total = 0;
         const items = carrito.map(item => {
             const subtotal = item.precio * item.cantidad;
             total += subtotal;
@@ -1718,8 +1717,18 @@ async function procesarPedidoSistema(metodoPago) {
                 nombreProducto += ` (${item.saboresElegidos.join(' + ')})`;
             }
             
-            if (item.lecheElegida && item.lecheElegida !== 'Entera') {
-                nombreProducto += ` (Leche: ${item.lecheElegida})`;
+            // Agregar información de leches para promociones y productos individuales
+            if (item.lechesElegidas && item.lechesElegidas.length > 0) {
+                const lechesTexto = item.lechesElegidas.map((leche, index) => {
+                    const saborCorrespondiente = item.saboresElegidos ? item.saboresElegidos[index] : `Frappe ${index + 1}`;
+                    return `${saborCorrespondiente}: ${leche}`;
+                }).filter(Boolean);
+                
+                if (lechesTexto.length > 0) {
+                    nombreProducto += ` - ${lechesTexto.join(', ')}`;
+                }
+            } else if (item.lecheElegida && item.lecheElegida !== 'Entera') {
+                nombreProducto += ` - ${item.lecheElegida}`;
             }
             
             return {
@@ -1730,7 +1739,7 @@ async function procesarPedidoSistema(metodoPago) {
                 description: `${item.nombre} - Hora recogida: ${horaRecogida}`
             };
         });
-        
+
         // Datos del pedido para el sistema
         const orderData = {
             items: items,

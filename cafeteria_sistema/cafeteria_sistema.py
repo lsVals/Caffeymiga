@@ -38,9 +38,18 @@ except ImportError:
 
 class PedidosWebManager:
     def __init__(self):
-        self.db_path = "pos_pedidos.db"
+        self.db_path = "../caffeymiga_pedidos.db"  # NUEVO NOMBRE ÚNICO
         self.monitoring = False
         self.monitor_thread = None
+        
+        # DEBUG: Mostrar información de la base de datos
+        import os
+        abs_path = os.path.abspath(self.db_path)
+        print(f"🔍 DEBUG BD: Ruta relativa: {self.db_path}")
+        print(f"🔍 DEBUG BD: Ruta absoluta: {abs_path}")
+        print(f"🔍 DEBUG BD: ¿Existe? {os.path.exists(abs_path)}")
+        if os.path.exists(abs_path):
+            print(f"🔍 DEBUG BD: Tamaño: {os.path.getsize(abs_path)} bytes")
         
     def test_connection(self):
         """Probar conexión con la base de datos local"""
@@ -57,6 +66,21 @@ class PedidosWebManager:
         try:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
+            
+            # DEBUG: Verificar estructura de la tabla
+            c.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = c.fetchall()
+            print(f"🔍 DEBUG: Tablas en BD: {tables}")
+            
+            # DEBUG: Contar pedidos totales
+            c.execute("SELECT COUNT(*) FROM pedidos")
+            total = c.fetchone()[0]
+            print(f"🔍 DEBUG: Total pedidos en BD: {total}")
+            
+            # DEBUG: Contar pendientes
+            c.execute("SELECT COUNT(*) FROM pedidos WHERE estado = 'pendiente'")
+            pendientes = c.fetchone()[0]
+            print(f"🔍 DEBUG: Pedidos pendientes: {pendientes}")
             
             # Obtener pedidos pendientes
             c.execute("""
@@ -81,6 +105,7 @@ class PedidosWebManager:
                     'fecha_creacion': row[8]
                 }
                 pedidos.append(pedido)
+                print(f"🔍 DEBUG: Pedido cargado: {row[0]} - {row[1]} - ${row[5]}")
             
             conn.close()
             return pedidos
@@ -1348,79 +1373,110 @@ class AppCafeteria(tk.Tk):
 
     def show_pedidos_online(self):
         """Mostrar pedidos web desde la base de datos local"""
-        self.clear_frames()
-        frame = tk.Frame(self, bg="#F4F6F7")
-        frame.pack(fill="both", expand=True)
-        self.frames["pedidos_online"] = frame
-
-        # Canvas + scrollbar para pedidos
-        canvas = tk.Canvas(frame, bg="#F4F6F7", highlightthickness=0)
-        scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        scrollable_frame = tk.Frame(canvas, bg="#F4F6F7")
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        def on_configure(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        scrollable_frame.bind("<Configure>", on_configure)
-
-        # Título principal
-        tk.Label(scrollable_frame, text="🌐 PEDIDOS WEB EN LÍNEA", 
-                font=("Segoe UI", 28, "bold"), bg="#F4F6F7", fg="#E67E22").pack(pady=(20, 10))
-        
-        # Verificar conexión con la base de datos
-        if not self.pedidos_web_manager.test_connection():
-            error_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
-            error_frame.pack(fill="x", padx=40, pady=20)
+        # DEBUG: Agregar logs para diagnosticar
+        try:
+            print("🔍 DEBUG: Iniciando show_pedidos_online")
             
-            tk.Label(error_frame, text="❌ ERROR DE CONEXIÓN", 
-                    font=("Segoe UI", 20, "bold"), bg="#FFFFFF", fg="#E74C3C").pack(pady=20)
-            tk.Label(error_frame, text="No se puede acceder a la base de datos pos_pedidos.db", 
-                    font=("Segoe UI", 14), bg="#FFFFFF", fg="#7F8C8D").pack(pady=10)
-            tk.Button(error_frame, text="⬅️ Volver al Menú", command=self.show_menu,
-                     bg="#95A5A6", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
-            return
+            self.clear_frames()
+            frame = tk.Frame(self, bg="#F4F6F7")
+            frame.pack(fill="both", expand=True)
+            self.frames["pedidos_online"] = frame
 
-        # Obtener pedidos pendientes
-        pedidos = self.pedidos_web_manager.get_web_orders()
-        
-        # Panel de control
-        control_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
-        control_frame.pack(fill="x", padx=40, pady=(0, 20))
-        
-        tk.Label(control_frame, text="🎛️ PANEL DE CONTROL", 
-                font=("Segoe UI", 18, "bold"), bg="#FFFFFF", fg="#235A6F").pack(pady=15)
-        
-        info_frame = tk.Frame(control_frame, bg="#FFFFFF")
-        info_frame.pack(pady=10)
-        
-        tk.Label(info_frame, text=f"📊 Pedidos pendientes: {len(pedidos)}", 
-                font=("Segoe UI", 14, "bold"), bg="#FFFFFF", fg="#27AE60").pack(side="left", padx=20)
-        
-        tk.Button(info_frame, text="🔄 Actualizar", command=self.show_pedidos_online,
-                 bg="#3498DB", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=10)
-        
-        tk.Button(control_frame, text="⬅️ Volver al Menú", command=self.show_menu,
-                 bg="#95A5A6", fg="white", font=("Segoe UI", 14, "bold")).pack(pady=15)
+            # Canvas + scrollbar para pedidos
+            canvas = tk.Canvas(frame, bg="#F4F6F7", highlightthickness=0)
+            scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            scrollable_frame = tk.Frame(canvas, bg="#F4F6F7")
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            def on_configure(event):
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            scrollable_frame.bind("<Configure>", on_configure)
 
-        if not pedidos:
-            # No hay pedidos
-            no_orders_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
-            no_orders_frame.pack(fill="x", padx=40, pady=20)
+            # Título principal
+            tk.Label(scrollable_frame, text="🌐 PEDIDOS WEB EN LÍNEA", 
+                    font=("Segoe UI", 28, "bold"), bg="#F4F6F7", fg="#E67E22").pack(pady=(20, 10))
             
-            tk.Label(no_orders_frame, text="✅ NO HAY PEDIDOS PENDIENTES", 
-                    font=("Segoe UI", 20, "bold"), bg="#FFFFFF", fg="#27AE60").pack(pady=30)
-            tk.Label(no_orders_frame, text="Todos los pedidos web han sido procesados", 
-                    font=("Segoe UI", 14), bg="#FFFFFF", fg="#7F8C8D").pack(pady=10)
-            return
+            print("🔍 DEBUG: Verificando conexión BD...")
+            # Verificar conexión con la base de datos
+            if not self.pedidos_web_manager.test_connection():
+                print("❌ DEBUG: Falló test_connection")
+                error_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
+                error_frame.pack(fill="x", padx=40, pady=20)
+                
+                tk.Label(error_frame, text="❌ ERROR DE CONEXIÓN", 
+                        font=("Segoe UI", 20, "bold"), bg="#FFFFFF", fg="#E74C3C").pack(pady=20)
+                tk.Label(error_frame, text="No se puede acceder a la base de datos pos_pedidos.db", 
+                        font=("Segoe UI", 14), bg="#FFFFFF", fg="#7F8C8D").pack(pady=10)
+                tk.Button(error_frame, text="⬅️ Volver al Menú", command=self.show_menu,
+                         bg="#95A5A6", fg="white", font=("Segoe UI", 16, "bold")).pack(pady=20)
+                return
 
-        # Mostrar pedidos
-        for idx, pedido in enumerate(pedidos):
-            self.create_order_widget(scrollable_frame, pedido, idx)
+            print("✅ DEBUG: Conexión BD OK")
+            
+            # Obtener pedidos pendientes
+            print("🔍 DEBUG: Obteniendo pedidos...")
+            pedidos = self.pedidos_web_manager.get_web_orders()
+            print(f"✅ DEBUG: Obtenidos {len(pedidos)} pedidos")
+            
+            # Panel de control
+            control_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
+            control_frame.pack(fill="x", padx=40, pady=(0, 20))
+            
+            tk.Label(control_frame, text="🎛️ PANEL DE CONTROL", 
+                    font=("Segoe UI", 18, "bold"), bg="#FFFFFF", fg="#235A6F").pack(pady=15)
+            
+            info_frame = tk.Frame(control_frame, bg="#FFFFFF")
+            info_frame.pack(pady=10)
+            
+            tk.Label(info_frame, text=f"📊 Pedidos pendientes: {len(pedidos)}", 
+                    font=("Segoe UI", 14, "bold"), bg="#FFFFFF", fg="#27AE60").pack(side="left", padx=20)
+            
+            tk.Button(info_frame, text="🔄 Actualizar", command=self.show_pedidos_online,
+                     bg="#3498DB", fg="white", font=("Segoe UI", 12, "bold")).pack(side="left", padx=10)
+            
+            tk.Button(control_frame, text="⬅️ Volver al Menú", command=self.show_menu,
+                     bg="#95A5A6", fg="white", font=("Segoe UI", 14, "bold")).pack(pady=15)
+
+            if not pedidos:
+                print("⚠️ DEBUG: No hay pedidos - mostrando mensaje")
+                # No hay pedidos
+                no_orders_frame = tk.Frame(scrollable_frame, bg="#FFFFFF", relief="groove", bd=3)
+                no_orders_frame.pack(fill="x", padx=40, pady=20)
+                
+                tk.Label(no_orders_frame, text="✅ NO HAY PEDIDOS PENDIENTES", 
+                        font=("Segoe UI", 20, "bold"), bg="#FFFFFF", fg="#27AE60").pack(pady=30)
+                tk.Label(no_orders_frame, text="Todos los pedidos web han sido procesados", 
+                        font=("Segoe UI", 14), bg="#FFFFFF", fg="#7F8C8D").pack(pady=10)
+                return
+
+            # Mostrar pedidos
+            print(f"🔍 DEBUG: Creando widgets para {len(pedidos)} pedidos...")
+            for idx, pedido in enumerate(pedidos):
+                print(f"   Creando widget para pedido #{idx + 1}: {pedido['id']}")
+                try:
+                    self.create_order_widget(scrollable_frame, pedido, idx)
+                    print(f"   ✅ Widget #{idx + 1} creado OK")
+                except Exception as widget_error:
+                    print(f"   ❌ Error en widget #{idx + 1}: {widget_error}")
+            
+            print("✅ DEBUG: show_pedidos_online completado")
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Error crítico en show_pedidos_online: {e}")
+            import traceback
+            traceback.print_exc()
 
     def create_order_widget(self, parent, order, index):
         """Crear widget para mostrar un pedido individual"""
+        # DEBUG: Log del pedido que se está procesando
+        print(f"🔍 DEBUG: Procesando pedido #{index + 1}")
+        print(f"   ID: {order.get('id', 'SIN ID')}")
+        print(f"   Cliente: {order.get('cliente_nombre', 'SIN NOMBRE')}")
+        print(f"   Total: ${order.get('total', 0)}")
+        print(f"   Items raw: {order.get('items', 'VACIO')[:100]}...")
+        
         # Frame principal del pedido
         order_frame = tk.Frame(parent, bg="#FFFFFF", relief="groove", bd=3)
         order_frame.pack(fill="x", padx=40, pady=15)
@@ -1442,13 +1498,28 @@ class AppCafeteria(tk.Tk):
         cliente_frame = tk.Frame(info_frame, bg="#F8F9FA", relief="flat", bd=2)
         cliente_frame.pack(fill="x", pady=(0, 10))
 
-        tk.Label(cliente_frame, text=f"👤 Cliente: {order['cliente_nombre']}", 
+        # Mejorar el manejo de datos del cliente
+        cliente_nombre = order.get('cliente_nombre', '') or 'Cliente Web'
+        if not cliente_nombre or cliente_nombre.strip() == '':
+            cliente_nombre = 'Cliente Web'
+            
+        cliente_telefono = order.get('cliente_telefono', '') or 'No especificado'
+        if not cliente_telefono or cliente_telefono.strip() == '':
+            cliente_telefono = 'No especificado'
+            
+        hora_recogida = order.get('hora_recogida', '') or 'No especificada'
+        if not hora_recogida or hora_recogida.strip() == '':
+            hora_recogida = 'No especificada'
+            
+        metodo_pago = order.get('metodo_pago', '') or 'mercado_pago'
+
+        tk.Label(cliente_frame, text=f"👤 Cliente: {cliente_nombre}", 
                 font=("Segoe UI", 12, "bold"), bg="#F8F9FA", fg="#235A6F").pack(anchor="w", padx=15, pady=5)
-        tk.Label(cliente_frame, text=f"📞 Teléfono: {order['cliente_telefono']}", 
+        tk.Label(cliente_frame, text=f"📞 Teléfono: {cliente_telefono}", 
                 font=("Segoe UI", 12), bg="#F8F9FA", fg="#7F8C8D").pack(anchor="w", padx=15)
-        tk.Label(cliente_frame, text=f"🕐 Hora de recogida: {order['hora_recogida']}", 
+        tk.Label(cliente_frame, text=f"🕐 Hora de recogida: {hora_recogida}", 
                 font=("Segoe UI", 12), bg="#F8F9FA", fg="#7F8C8D").pack(anchor="w", padx=15)
-        tk.Label(cliente_frame, text=f"💳 Método de pago: {order['metodo_pago']}", 
+        tk.Label(cliente_frame, text=f"💳 Método de pago: {metodo_pago}", 
                 font=("Segoe UI", 12), bg="#F8F9FA", fg="#7F8C8D").pack(anchor="w", padx=15, pady=(0, 5))
 
         # Items del pedido
@@ -1460,17 +1531,54 @@ class AppCafeteria(tk.Tk):
 
         try:
             import json
-            items = json.loads(order['items']) if order['items'] else []
-            if items:
-                for item in items:
-                    item_text = f"• {item.get('name', 'Producto')} x{item.get('quantity', 1)} - ${item.get('price', 0):.2f}"
-                    tk.Label(items_frame, text=item_text, 
-                            font=("Segoe UI", 11), bg="#FFFFFF", fg="#2C3E50").pack(anchor="w", padx=20)
+            # Parsear los items desde JSON
+            items_str = order.get('items', '') or '[]'
+            print(f"🔍 DEBUG: Items string: {items_str[:200]}...")
+            
+            if items_str and items_str.strip():
+                items = json.loads(items_str)
+                print(f"🔍 DEBUG: Items parseados: {len(items)} productos")
             else:
-                tk.Label(items_frame, text="• No se pudieron cargar los productos", 
-                        font=("Segoe UI", 11), bg="#FFFFFF", fg="#E74C3C").pack(anchor="w", padx=20)
-        except:
-            tk.Label(items_frame, text="• Error al procesar productos del pedido", 
+                items = []
+                print("🔍 DEBUG: No hay items o string vacío")
+            
+            if items and len(items) > 0:
+                for i, item in enumerate(items, 1):
+                    # Obtener información del producto de manera más robusta
+                    name = item.get('name', item.get('title', 'Producto sin nombre'))
+                    quantity = item.get('quantity', item.get('cantidad', 1))
+                    price = float(item.get('price', item.get('precio', item.get('unit_price', 0))))
+                    description = item.get('description', item.get('descripcion', ''))
+                    
+                    print(f"   Producto {i}: {name} x{quantity} = ${price}")
+                    
+                    # Crear texto del producto más detallado
+                    item_text = f"   {i}. {name}"
+                    if quantity > 1:
+                        item_text += f" x{quantity}"
+                    item_text += f" = ${price:.2f}"
+                    
+                    # Label principal del producto
+                    product_label = tk.Label(items_frame, text=item_text, 
+                            font=("Segoe UI", 11, "bold"), bg="#FFFFFF", fg="#2C3E50")
+                    product_label.pack(anchor="w", padx=20)
+                    
+                    # Si hay descripción, mostrarla
+                    if description and description.strip():
+                        desc_text = f"      {description}"
+                        tk.Label(items_frame, text=desc_text, 
+                                font=("Segoe UI", 10), bg="#FFFFFF", fg="#7F8C8D").pack(anchor="w", padx=20)
+            else:
+                tk.Label(items_frame, text="• Pedido sin productos especificados", 
+                        font=("Segoe UI", 11), bg="#FFFFFF", fg="#E67E22").pack(anchor="w", padx=20)
+                        
+        except json.JSONDecodeError as e:
+            print(f"❌ DEBUG: Error JSON: {e}")
+            tk.Label(items_frame, text=f"• Error JSON: {str(e)}", 
+                    font=("Segoe UI", 11), bg="#FFFFFF", fg="#E74C3C").pack(anchor="w", padx=20)
+        except Exception as e:
+            print(f"❌ DEBUG: Error productos: {e}")
+            tk.Label(items_frame, text=f"• Error al procesar productos: {str(e)}", 
                     font=("Segoe UI", 11), bg="#FFFFFF", fg="#E74C3C").pack(anchor="w", padx=20)
 
         # Botones de acción
