@@ -1,98 +1,107 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Sincronizador de pedidos desde producción
-Obtiene pedidos desde el servidor de producción y los sincroniza con el POS local
+Sincronizador automático de pedidos desde servidor de producción
 """
-
+import time
 import requests
-import json
 import sqlite3
-import os
+import json
 from datetime import datetime
 
 def sync_orders_from_production():
     """Sincronizar pedidos desde el servidor de producción"""
     try:
-        print("🔄 Sincronizando pedidos desde producción...")
+        print("🔄 Sincronizando pedidos desde el servidor...")
         
         # URL del servidor de producción
-        production_url = "https://caffeymiga-1.onrender.com"
+        server_url = "https://caffeymiga-1.onrender.com"
         
-        # Endpoint para obtener pedidos nuevos
-        response = requests.get(f"{production_url}/pos/orders/sync", timeout=30)
+        # Obtener pedidos del servidor
+        response = requests.get(f"{server_url}/pos/orders", timeout=15)
         
         if response.status_code == 200:
-            orders = response.json()
-            print(f"📦 Encontrados {len(orders)} pedidos nuevos")
+            data = response.json()
+            orders = data.get('orders', [])
             
-            # Guardar cada pedido en SQLite local
+            if not orders:
+                print("📭 No hay pedidos nuevos en el servidor")
+                return
+            
+            print(f"📥 Encontrados {len(orders)} pedidos en el servidor")
+            
+            # Conectar a la base de datos local
+            conn = sqlite3.connect('pos_pedidos.db')
+            cursor = conn.cursor()
+            
+            nuevos_pedidos = 0
+            
             for order in orders:
-                save_to_local_sqlite(order)
-                print(f"✅ Pedido sincronizado: {order.get('customer', {}).get('name', 'Sin nombre')}")
+                try:
+                    order_id = order.get('id', f"sync_{int(datetime.now().timestamp())}")
+                    
+                    # Verificar si ya existe
+                    cursor.execute("SELECT id FROM pedidos WHERE id = ?", (order_id,))
+                    if cursor.fetchone():
+                        continue  # Ya existe
+                    
+                    # Formatear productos
+                    items = []
+                    for producto in order.get('productos', []):
+                        items.append({
+                            "name": producto.get('nombre', 'Producto Web'),
+                            "price": producto.get('precio', 0),
+                            "quantity": producto.get('cantidad', 1)
+                        })
+                    
+                    # Insertar nuevo pedido
+                    cursor.execute('''
+                        INSERT INTO pedidos (id, cliente_nombre, cliente_telefono, hora_recogida, 
+                                           items, total, estado, metodo_pago, fecha_creacion, fecha_actualizacion)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        order_id,
+                        order.get('cliente_nombre', ''),
+                        order.get('cliente_telefono', ''),
+                        order.get('hora_recogida', ''),
+                        json.dumps(items, ensure_ascii=False),
+                        order.get('total', 0),
+                        'pendiente',
+                        order.get('metodo_pago', 'mercado_pago'),
+                        order.get('fecha', datetime.now().isoformat()),
+                        datetime.now().isoformat()
+                    ))
+                    
+                    nuevos_pedidos += 1
+                    print(f"✅ Nuevo pedido sincronizado: {order.get('cliente_nombre', 'Sin nombre')} - ${order.get('total', 0)}")
+                    
+                except Exception as e:
+                    print(f"❌ Error procesando pedido: {e}")
             
-            print(f"🎉 Sincronización completada: {len(orders)} pedidos")
-            return True
+            conn.commit()
+            conn.close()
             
+            if nuevos_pedidos > 0:
+                print(f"🎉 {nuevos_pedidos} pedidos nuevos agregados al sistema")
+            else:
+                print("📌 Todos los pedidos ya estaban sincronizados")
+        
         else:
-            print(f"❌ Error al conectar con producción: {response.status_code}")
-            return False
-            
+            print(f"⚠️ Error del servidor: {response.status_code}")
+    
+    except requests.exceptions.RequestException as e:
+        print(f"🌐 Error de conexión: {e}")
     except Exception as e:
         print(f"❌ Error en sincronización: {e}")
-        return False
 
-def save_to_local_sqlite(order_data):
-    """Guardar pedido en SQLite local"""
-    try:
-        db_path = "cafeteria_sistema/pos_pedidos.db"
-        
-        if not os.path.exists(db_path):
-            print("❌ Base de datos local no encontrada")
-            return False
-            
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        
-        # Verificar si el pedido ya existe
-        c.execute("SELECT id FROM pedidos WHERE id = ?", (order_data['id'],))
-        if c.fetchone():
-            print(f"⚠️ Pedido {order_data['id']} ya existe, omitiendo...")
-            conn.close()
-            return True
-        
-        # Extraer datos
-        customer = order_data.get('customer', {})
-        items = order_data.get('items', [])
-        metadata = order_data.get('metadata', {})
-        
-        # Insertar pedido
-        c.execute("""
-            INSERT INTO pedidos (id, cliente_nombre, cliente_telefono, hora_recogida, 
-                               items, total, estado, metodo_pago, fecha_creacion, fecha_actualizacion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            order_data['id'],
-            customer.get('name', ''),
-            customer.get('phone', ''),
-            metadata.get('pickup_time', ''),
-            json.dumps(items),
-            order_data.get('total', 0),
-            'pendiente',
-            customer.get('payment_method', 'mercado_pago'),
-            order_data.get('timestamp', datetime.now().isoformat()),
-            datetime.now().isoformat()
-        ))
-        
-        conn.commit()
-        conn.close()
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error guardando en SQLite: {e}")
-        return False
+def main():
+    """Ejecutar sincronización una vez"""
+    print("🚀 Iniciando sincronización de pedidos...")
+    print("📡 Conectando con servidor de producción...")
+    
+    sync_orders_from_production()
+    
+    print("✅ Sincronización completada")
 
 if __name__ == "__main__":
-    print("🚀 SINCRONIZADOR DE PEDIDOS - CAFFÈ & MIGA")
-    print("=" * 50)
-    sync_orders_from_production()
+    main()
