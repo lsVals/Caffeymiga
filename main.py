@@ -682,9 +682,48 @@ def serve_images(filename):
 def save_order_to_sqlite(order_data):
     """Guardar pedido también en SQLite local para sincronización con POS"""
     try:
-        # En producción (Render), no guardar en SQLite local
+        # En producción (Render), guardar en memoria para sincronización
         if os.getenv('ENVIRONMENT') == 'production':
-            logger.info("🌐 Entorno de producción - pedido procesado en la nube")
+            logger.info("🌐 Entorno de producción - guardando en memoria para sincronización")
+            
+            # Crear estructura para sincronización
+            order_for_sync = {
+                'id': order_data.get('id', f"web_{int(datetime.now().timestamp())}"),
+                'cliente': {
+                    'nombre': order_data.get('customer', {}).get('name', 'Cliente Web'),
+                    'telefono': order_data.get('customer', {}).get('phone', 'N/A'),
+                    'email': order_data.get('customer', {}).get('email', 'N/A')
+                },
+                'productos': [],
+                'total': order_data.get('total', 0),
+                'metodo_pago': order_data.get('customer', {}).get('payment_method', 'efectivo'),
+                'estado': 'pending',
+                'pos_status': 'nuevo',
+                'fecha': order_data.get('timestamp', datetime.now().isoformat()),
+                'metadata': order_data.get('metadata', {}),
+                'payment_status': order_data.get('payment_status', 'pending')
+            }
+            
+            # Formatear productos
+            for item in order_data.get('items', []):
+                order_for_sync['productos'].append({
+                    'nombre': item.get('title', 'Producto'),
+                    'cantidad': item.get('quantity', 1),
+                    'precio': item.get('unit_price', item.get('price', 0)),
+                    'descripcion': item.get('description', '')
+                })
+            
+            # Guardar en variable global para endpoint
+            if not hasattr(app, 'pending_orders'):
+                app.pending_orders = []
+            
+            app.pending_orders.append(order_for_sync)
+            
+            # Mantener solo los últimos 50 pedidos en memoria
+            if len(app.pending_orders) > 50:
+                app.pending_orders = app.pending_orders[-50:]
+            
+            logger.info(f"✅ Pedido guardado en memoria para sincronización: {order_for_sync['id']}")
             return True
         
         # En desarrollo local, usar SQLite
