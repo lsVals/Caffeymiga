@@ -400,7 +400,7 @@ def pos_orders():
                 'total': total,
                 'customer': {
                     'name': data.get('payer', {}).get('name', ''),
-                    'phone': data.get('payer', {}).get('phone', ''),
+                    'phone': data.get('payer', {}).get('phone', {}).get('number', '') if isinstance(data.get('payer', {}).get('phone'), dict) else data.get('payer', {}).get('phone', ''),
                     'email': data.get('payer', {}).get('email', ''),
                     'payment_method': f"Terminal Mercado Pago en sucursal" if data.get('payment_method') == 'mercado_pago' else 'Efectivo'
                 },
