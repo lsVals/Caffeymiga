@@ -1702,6 +1702,15 @@ async function procesarPedidoSistema(metodoPago) {
         const telefono = document.getElementById('telefono').value;
         const horaRecogida = document.getElementById('horaRecogida').value;
         
+        // 🔥 SUPER DEBUG FRONTEND
+        console.log('🔥 FRONTEND DEBUG:');
+        console.log('📋 Elemento nombre:', document.getElementById('nombre'));
+        console.log('📋 Valor nombre:', nombre);
+        console.log('📋 Elemento telefono:', document.getElementById('telefono'));
+        console.log('📋 Valor telefono:', telefono);
+        console.log('📋 Elemento horaRecogida:', document.getElementById('horaRecogida'));
+        console.log('📋 Valor horaRecogida:', horaRecogida);
+        
         // Validar campos
         if (!nombre || !telefono || !horaRecogida) {
             alert('Por favor completa todos los campos');
@@ -1762,6 +1771,13 @@ async function procesarPedidoSistema(metodoPago) {
         };
         
         console.log('📦 Enviando pedido al sistema:', orderData);
+        
+        // 🔥 DEBUG PAYER DATA
+        console.log('🔥 PAYER DEBUG:');
+        console.log('   payer object:', orderData.payer);
+        console.log('   name:', orderData.payer.name);
+        console.log('   phone:', orderData.payer.phone);
+        console.log('   email:', orderData.payer.email);
         
         // Mostrar loading
         showLoadingMessage('Procesando pedido...');
