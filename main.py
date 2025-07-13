@@ -413,6 +413,16 @@ def pos_orders():
             # Intentar guardar en Firebase primero
             firebase_result = firebase_manager.save_order(order_data)
             
+            # IMPORTANTE: También guardar en memoria para sincronización en producción
+            if os.getenv('ENVIRONMENT') == 'production':
+                if not hasattr(app, 'pending_orders'):
+                    app.pending_orders = []
+                app.pending_orders.append(order_data)
+                # Mantener solo los últimos 50 pedidos en memoria
+                if len(app.pending_orders) > 50:
+                    app.pending_orders = app.pending_orders[-50:]
+                logger.info(f"✅ Pedido {data.get('payment_method')} agregado a pending_orders para sincronización")
+            
             if firebase_result:
                 logger.info(f"✅ Pedido {data.get('payment_method')} guardado en Firebase: {order_id}")
                 
