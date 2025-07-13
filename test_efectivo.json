@@ -1,0 +1,23 @@
+{
+    "items": [
+        {
+            "name": "Americano",
+            "price": 40,
+            "quantity": 1
+        }
+    ],
+    "payer": {
+        "name": "Cv",
+        "phone": {
+            "area_code": "52",
+            "number": "644446464"
+        },
+        "email": "cv@test.com"
+    },
+    "payment_method": "efectivo",
+    "notes": "Pedido de prueba efectivo",
+    "metadata": {
+        "pickup_time": "2:30 PM",
+        "source": "web_test"
+    }
+}

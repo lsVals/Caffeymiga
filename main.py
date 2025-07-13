@@ -868,6 +868,37 @@ def test_mercadopago():
             "access_token_configured": bool(ACCESS_TOKEN)
         }), 500
 
+@app.route('/pos/orders/sync', methods=['GET'])
+def sync_orders():
+    """Endpoint para sincronizar pedidos desde producción al POS local"""
+    try:
+        orders = []
+        
+        # En producción, leer archivos temporales
+        if os.getenv('ENVIRONMENT') == 'production':
+            temp_dir = "temp_orders"
+            if os.path.exists(temp_dir):
+                for filename in os.listdir(temp_dir):
+                    if filename.endswith('.json'):
+                        file_path = os.path.join(temp_dir, filename)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                order = json.load(f)
+                                orders.append(order)
+                        except Exception as e:
+                            logger.error(f"Error leyendo {filename}: {e}")
+                
+                # Opcional: limpiar archivos después de leerlos
+                # for filename in os.listdir(temp_dir):
+                #     if filename.endswith('.json'):
+                #         os.remove(os.path.join(temp_dir, filename))
+        
+        return jsonify(orders), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error en sync de pedidos: {e}")
+        return jsonify({"error": "Error sincronizando pedidos"}), 500
+
 if __name__ == '__main__':
     print("\n" + "="*50)
     print("🚀 Iniciando servidor Caffe & Miga")
