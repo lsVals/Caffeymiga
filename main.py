@@ -371,8 +371,44 @@ def pos_orders():
     if request.method == 'POST':
         # Crear pedido en efectivo o terminal
         try:
+            # SUPER DEBUG: Ver el request completo
+            print("=" * 80)
+            print("🔥 SUPER DEBUG - NUEVO PEDIDO")
+            print(f"Request Content-Type: {request.content_type}")
+            print(f"Request Method: {request.method}")
+            print(f"Request Headers: {dict(request.headers)}")
+            
+            # Obtener datos raw del request
+            raw_data = request.get_data(as_text=True)
+            print(f"RAW DATA: {raw_data}")
+            
+            # Obtener datos parseados
+            data = request.get_json()
+            print(f"PARSED DATA: {data}")
+            print(f"DATA TYPE: {type(data)}")
+            print(f"DATA KEYS: {list(data.keys()) if data else 'None'}")
+            
+            if data and 'payer' in data:
+                print(f"PAYER OBJECT: {data['payer']}")
+                print(f"PAYER TYPE: {type(data['payer'])}")
+                if isinstance(data['payer'], dict):
+                    print(f"PAYER KEYS: {list(data['payer'].keys())}")
+                    print(f"NAME: '{data['payer'].get('name', '')}'")
+                    print(f"PHONE: {data['payer'].get('phone', {})}")
+                    print(f"EMAIL: '{data['payer'].get('email', '')}'")
+            else:
+                print("NO PAYER DATA FOUND!")
+            
+            print("=" * 80)
+            
             data = request.get_json()
             logger.info(f"📦 Procesando pedido {data.get('payment_method', 'efectivo')}: {data.get('payer', {}).get('name', 'Sin nombre')}")
+            
+            # DEBUG: Ver qué datos llegan exactamente
+            logger.info(f"🔍 DEBUG RAW DATA:")
+            logger.info(f"   data.keys(): {list(data.keys())}")
+            logger.info(f"   payer completo: {data.get('payer', {})}")
+            logger.info(f"   metadata completo: {data.get('metadata', {})}")
             
             # Validar datos requeridos
             if not data.get('items') or len(data['items']) == 0:
@@ -402,7 +438,7 @@ def pos_orders():
                     'name': data.get('payer', {}).get('name', ''),
                     'phone': data.get('payer', {}).get('phone', {}).get('number', '') if isinstance(data.get('payer', {}).get('phone'), dict) else data.get('payer', {}).get('phone', ''),
                     'email': data.get('payer', {}).get('email', ''),
-                    'payment_method': f"Terminal Mercado Pago en sucursal" if data.get('payment_method') == 'mercado_pago' else 'Efectivo'
+                    'payment_method': "Terminal Mercado Pago en sucursal" if data.get('payment_method') == 'terminal' else "Efectivo en sucursal"
                 },
                 'items': data.get('items', []),
                 'metadata': data.get('metadata', {}),
