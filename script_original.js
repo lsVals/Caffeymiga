@@ -499,15 +499,13 @@ function configurarCarrito() {
     });
 }
 
-// Enviar pedido por WhatsApp
-function enviarPedidoWhatsApp() {
-    const nombre = document.getElementById('nombre').value;
-    const telefono = document.getElementById('telefono').value;
-    const horaRecogida = document.getElementById('horaRecogida').value;
-    const metodoPago = document.querySelector('input[name="metodoPago"]:checked');
-    
-    if (!metodoPago) {
-        alert('Por favor selecciona un método de pago');
+// Enviar pedido directo al sistema (sin WhatsApp)
+// FUNCIÓN ELIMINADA: Ya no usamos WhatsApp para pedidos
+// Los pedidos ahora se procesan directamente con Mercado Pago y el sistema POS
+function enviarPedidoWhatsApp_ELIMINADA() {
+    // Esta función ha sido deshabilitada
+    console.log('⚠️ Función de WhatsApp deshabilitada - usar Mercado Pago');
+    return;
         return;
     }
     
@@ -1661,9 +1659,6 @@ function handleCheckoutError(error) {
                 <button onclick="reintentar_pago()" class="btn-reintentar">
                     🔄 Reintentar
                 </button>
-                <button onclick="volverAWhatsApp()" class="btn-whatsapp-error">
-                    📱 Enviar por WhatsApp
-                </button>
             </div>
             
             <div class="error-info">
@@ -1685,11 +1680,7 @@ function reintentar_pago() {
     crearPreferenciaPago();
 }
 
-// Volver a WhatsApp desde checkout
-function volverAWhatsApp() {
-    document.getElementById('checkout-modal').style.display = 'none';
-    enviarPedidoWhatsApp();
-}
+// FUNCIÓN ELIMINADA: Ya no usamos WhatsApp para pedidos
 
 // Procesar pedido para efectivo o terminal - NUEVA FUNCIÓN
 async function procesarPedidoSistema(metodoPago) {
