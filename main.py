@@ -400,9 +400,9 @@ def pos_orders():
                 'total': total,
                 'customer': {
                     'name': data.get('payer', {}).get('name', ''),
-                    'phone': data.get('payer', {}).get('phone', {}).get('number', ''),
+                    'phone': data.get('payer', {}).get('phone', ''),
                     'email': data.get('payer', {}).get('email', ''),
-                    'payment_method': data.get('payment_method', 'efectivo')
+                    'payment_method': f"Terminal Mercado Pago en sucursal" if data.get('payment_method') == 'mercado_pago' else 'Efectivo'
                 },
                 'items': data.get('items', []),
                 'metadata': data.get('metadata', {}),
@@ -734,7 +734,7 @@ def save_order_to_sqlite(order_data):
                 'fecha': order_data.get('timestamp', datetime.now().isoformat()),
                 'metadata': order_data.get('metadata', {}),
                 'payment_status': order_data.get('payment_status', 'pending'),
-                'hora_recogida': order_data.get('metadata', {}).get('pickup_time', 'No especificada')
+                'hora_recogida': order_data.get('pickup_time', order_data.get('metadata', {}).get('pickup_time', 'No especificada'))
             }
             
             # Formatear productos con información detallada
@@ -795,7 +795,7 @@ def save_order_to_sqlite(order_data):
             order_id,
             customer.get('name', ''),
             customer.get('phone', ''),
-            metadata.get('pickup_time', ''),
+            order_data.get('pickup_time', metadata.get('pickup_time', '')),
             items_json,
             order_data.get('total', 0),
             'pendiente',
